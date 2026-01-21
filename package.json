@@ -6,7 +6,7 @@
   "types": "dist/runtime.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-      "build:examples": "tsc -p tsconfig.examples.json",
+    "build:examples": "tsc -p tsconfig.examples.json",
     "start": "node dist/server.js",
     "dev": "npm run build && npm run start",
     "clean": "rm -rf dist dist-test",

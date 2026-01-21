@@ -2,6 +2,19 @@
 
 Performance characteristics of nessen-runtime under various workloads.
 
+## Quick Start
+
+```bash
+# 1. Install benchmark tool
+npm install -g autocannon
+
+# 2. Start the runtime
+npm start
+
+# 3. In another terminal, run the benchmark
+autocannon -c 100 -d 30 http://localhost:3000/health
+```
+
 ## Environment
 
 All benchmarks run on:
@@ -43,7 +56,13 @@ Duration: 30s
 | Latency (p99) | 30-50ms |
 | Memory (heap) | 25-35 MB |
 
-*Note: Actual performance depends on hardware, CPU, and system load.*
+**Disclaimer:** Results vary significantly based on:
+- Hardware specifications (CPU cores, clock speed)
+- System load and other processes
+- Network conditions
+- Node.js GC behavior
+
+*These numbers are representative of development machine performance. Production performance may differ.*
 
 ### API Health Endpoint (`GET /api/health`)
 
