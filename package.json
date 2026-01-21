@@ -2,8 +2,8 @@
   "name": "nessen-runtime",
   "version": "1.1.0",
   "description": "Enterprise-grade HTTP runtime for Node.js. Zero dependencies, production-ready with 100% security confidence. 45k+ req/sec, 8/8 tests passing, comprehensive audit verified.",
-  "main": "dist/runtime.js",
-  "types": "dist/runtime.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:examples": "tsc -p tsconfig.examples.json",

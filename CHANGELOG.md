@@ -72,6 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Low Latency:** ~2ms p50, ~5ms p95, ~10ms p99 latency under load.
 - **Memory Stability:** Stable ~50MB footprint under 10-minute sustained load test.
 - **Zero Leaks:** Memory leak testing confirms no unbounded growth under production workloads.
+- **Optimized Telemetry:** Telemetry snapshot calculation now uses Float32Array for better cache locality and reduced GC pressure. Percentile calculations use O(n) quickselect with in-place partitioning (no intermediate arrays). Average response size calculation uses cumulative sum tracking instead of reduce() on each snapshot build.
+- **Optimized Swap Operations:** Quickselect partition uses explicit temporary variables instead of destructuring swaps, reducing object allocation pressure.
 
 ### CI/CD
 - GitHub Actions workflow now runs npm test (includes typecheck, build, lint, and full test execution).

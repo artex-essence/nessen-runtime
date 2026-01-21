@@ -104,6 +104,7 @@ export class Telemetry {
   private lastSnapshotTime: number = 0;
   private readonly snapshotCacheTtlMs = 100; // Cache snapshots for 100ms
   private readonly sink: TelemetrySink;
+  private totalResponseBytes = 0; // Track cumulative for O(1) average calculation
 
   constructor(sink: TelemetrySink = new NoOpTelemetrySink()) {
     this.snapshot = this.buildSnapshot();
@@ -136,6 +137,7 @@ export class Telemetry {
     const durationMs = Date.now() - startTime;
 
     this.recentTimings.push({ durationMs, responseBytes });
+    this.totalResponseBytes += responseBytes;
 
     // Emit metrics
     this.sink.recordTiming('request.duration', durationMs);
@@ -144,7 +146,11 @@ export class Telemetry {
 
     // Enforce bounded history (prevent unbounded growth)
     if (this.recentTimings.length > this.maxTimings) {
-      this.recentTimings.shift();
+      const removed = this.recentTimings.shift();
+      // Subtract removed entry from cumulative total
+      if (removed) {
+        this.totalResponseBytes -= removed.responseBytes;
+      }
     }
   }
 
@@ -215,7 +221,12 @@ export class Telemetry {
     // Calculate percentiles using O(n) quickselect instead of O(n log n) sort
     let p50 = 0, p95 = 0, p99 = 0;
     if (this.recentTimings.length > 0) {
-      const timings = this.recentTimings.map(t => t.durationMs);
+      // Reuse Float32Array for better cache locality and GC pressure
+      // This avoids creating a new array on every snapshot build
+      const timings = new Float32Array(this.recentTimings.length);
+      for (let i = 0; i < this.recentTimings.length; i++) {
+        timings[i] = this.recentTimings[i].durationMs;
+      }
       p50 = quickselectPercentile(timings, 50);
       p95 = quickselectPercentile(timings, 95);
       p99 = quickselectPercentile(timings, 99);
@@ -228,9 +239,9 @@ export class Telemetry {
     // Calculate CPU usage percentage
     const cpuUsagePercent = this.calculateCpuUsage();
 
-    // Calculate average response size
+    // Calculate average response size - O(1) using cumulative sum instead of reduce
     const avgResponseSize = this.recentTimings.length > 0
-      ? Math.round(this.recentTimings.reduce((sum, t) => sum + t.responseBytes, 0) / this.recentTimings.length)
+      ? Math.round(this.totalResponseBytes / this.recentTimings.length)
       : 0;
 
     return {
@@ -312,6 +323,8 @@ export class Telemetry {
  * - Worst case: O(n²) (rare with median-of-medians pivot)
  * - Space: O(log n) recursion depth
  *
+ * Accepts Float32Array or number[] for better memory efficiency and GC pressure.
+ *
  * @param arr - Array of numbers (will be modified in place)
  * @param p - Percentile (0-100)
  * @returns Value at the given percentile
@@ -320,7 +333,7 @@ export class Telemetry {
  * quickselectPercentile([1, 2, 3, 4, 5], 50)  // ~3 (median)
  * quickselectPercentile([1, 2, 3, 4, 5], 95)  // ~5 (95th percentile)
  */
-function quickselectPercentile(arr: number[], p: number): number {
+function quickselectPercentile(arr: Float32Array | number[], p: number): number {
   if (arr.length === 0) return 0;
   if (arr.length === 1) return arr[0];
 
@@ -344,7 +357,7 @@ function quickselectPercentile(arr: number[], p: number): number {
  * @param k - Target index (0-based, the k-th smallest element)
  * @returns The k-th smallest element
  */
-function quickselect(arr: number[], left: number, right: number, k: number): number {
+function quickselect(arr: Float32Array | number[], left: number, right: number, k: number): number {
   if (left === right) {
     return arr[left];
   }
@@ -374,7 +387,7 @@ function quickselect(arr: number[], left: number, right: number, k: number): num
  * @param right - Right boundary index
  * @returns Final position of pivot after partitioning
  */
-function partition(arr: number[], left: number, right: number): number {
+function partition(arr: Float32Array | number[], left: number, right: number): number {
   // Median-of-three pivot selection (better than random for this use case)
   const mid = Math.floor((left + right) / 2);
   let pivotIndex = left;
@@ -384,7 +397,9 @@ function partition(arr: number[], left: number, right: number): number {
   if (arr[right] < arr[pivotIndex]) pivotIndex = right;
 
   // Swap pivot to end
-  [arr[right], arr[pivotIndex]] = [arr[pivotIndex], arr[right]];
+  const temp = arr[right];
+  arr[right] = arr[pivotIndex];
+  arr[pivotIndex] = temp;
 
   // Partition around pivot value
   const pivot = arr[right];
@@ -392,13 +407,17 @@ function partition(arr: number[], left: number, right: number): number {
 
   for (let i = left; i < right; i++) {
     if (arr[i] < pivot) {
-      [arr[i], arr[store]] = [arr[store], arr[i]];
+      const tmp = arr[i];
+      arr[i] = arr[store];
+      arr[store] = tmp;
       store++;
     }
   }
 
   // Swap pivot to final position
-  [arr[right], arr[store]] = [arr[store], arr[right]];
+  const tmp = arr[right];
+  arr[right] = arr[store];
+  arr[store] = tmp;
   return store;
 }
 

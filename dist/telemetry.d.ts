@@ -82,6 +82,7 @@ export declare class Telemetry {
     private lastSnapshotTime;
     private readonly snapshotCacheTtlMs;
     private readonly sink;
+    private totalResponseBytes;
     constructor(sink?: TelemetrySink);
     /**
      * Records the start of a request.

@@ -65,6 +65,7 @@ class Telemetry {
     lastSnapshotTime = 0;
     snapshotCacheTtlMs = 100; // Cache snapshots for 100ms
     sink;
+    totalResponseBytes = 0; // Track cumulative for O(1) average calculation
     constructor(sink = new NoOpTelemetrySink()) {
         this.snapshot = this.buildSnapshot();
         this.sink = sink;
@@ -93,13 +94,18 @@ class Telemetry {
         this.requestsActive = Math.max(0, this.requestsActive - 1);
         const durationMs = Date.now() - startTime;
         this.recentTimings.push({ durationMs, responseBytes });
+        this.totalResponseBytes += responseBytes;
         // Emit metrics
         this.sink.recordTiming('request.duration', durationMs);
         this.sink.recordGauge('requests.active', this.requestsActive);
         this.sink.recordGauge('response.size', responseBytes);
         // Enforce bounded history (prevent unbounded growth)
         if (this.recentTimings.length > this.maxTimings) {
-            this.recentTimings.shift();
+            const removed = this.recentTimings.shift();
+            // Subtract removed entry from cumulative total
+            if (removed) {
+                this.totalResponseBytes -= removed.responseBytes;
+            }
         }
     }
     /**
@@ -163,7 +169,12 @@ class Telemetry {
         // Calculate percentiles using O(n) quickselect instead of O(n log n) sort
         let p50 = 0, p95 = 0, p99 = 0;
         if (this.recentTimings.length > 0) {
-            const timings = this.recentTimings.map(t => t.durationMs);
+            // Reuse Float32Array for better cache locality and GC pressure
+            // This avoids creating a new array on every snapshot build
+            const timings = new Float32Array(this.recentTimings.length);
+            for (let i = 0; i < this.recentTimings.length; i++) {
+                timings[i] = this.recentTimings[i].durationMs;
+            }
             p50 = quickselectPercentile(timings, 50);
             p95 = quickselectPercentile(timings, 95);
             p99 = quickselectPercentile(timings, 99);
@@ -173,9 +184,9 @@ class Telemetry {
         const memoryUsageMB = Math.round(mem.heapUsed / 1024 / 1024);
         // Calculate CPU usage percentage
         const cpuUsagePercent = this.calculateCpuUsage();
-        // Calculate average response size
+        // Calculate average response size - O(1) using cumulative sum instead of reduce
         const avgResponseSize = this.recentTimings.length > 0
-            ? Math.round(this.recentTimings.reduce((sum, t) => sum + t.responseBytes, 0) / this.recentTimings.length)
+            ? Math.round(this.totalResponseBytes / this.recentTimings.length)
             : 0;
         return {
             requestsTotal: this.requestsTotal,
@@ -248,6 +259,8 @@ exports.Telemetry = Telemetry;
  * - Worst case: O(n²) (rare with median-of-medians pivot)
  * - Space: O(log n) recursion depth
  *
+ * Accepts Float32Array or number[] for better memory efficiency and GC pressure.
+ *
  * @param arr - Array of numbers (will be modified in place)
  * @param p - Percentile (0-100)
  * @returns Value at the given percentile
@@ -318,18 +331,24 @@ function partition(arr, left, right) {
     if (arr[right] < arr[pivotIndex])
         pivotIndex = right;
     // Swap pivot to end
-    [arr[right], arr[pivotIndex]] = [arr[pivotIndex], arr[right]];
+    const temp = arr[right];
+    arr[right] = arr[pivotIndex];
+    arr[pivotIndex] = temp;
     // Partition around pivot value
     const pivot = arr[right];
     let store = left;
     for (let i = left; i < right; i++) {
         if (arr[i] < pivot) {
-            [arr[i], arr[store]] = [arr[store], arr[i]];
+            const tmp = arr[i];
+            arr[i] = arr[store];
+            arr[store] = tmp;
             store++;
         }
     }
     // Swap pivot to final position
-    [arr[right], arr[store]] = [arr[store], arr[right]];
+    const tmp = arr[right];
+    arr[right] = arr[store];
+    arr[store] = tmp;
     return store;
 }
 /**

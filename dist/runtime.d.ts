@@ -53,6 +53,12 @@ export declare class Runtime {
      * Allow callers to extend the middleware pipeline with custom middleware.
      */
     extendPipeline(handler: MiddlewareHandler): this;
+    /**
+     * Alias for extendPipeline() - express-like API for adding middleware.
+     * @param handler - Middleware handler to add to the pipeline
+     * @returns - Returns this for chaining
+     */
+    use(handler: MiddlewareHandler): this;
 }
 export type { RequestContext } from './context.js';
 //# sourceMappingURL=runtime.d.ts.map

@@ -208,6 +208,15 @@ export class Runtime {
     this.pipeline.use(handler);
     return this;
   }
+
+  /**
+   * Alias for extendPipeline() - express-like API for adding middleware.
+   * @param handler - Middleware handler to add to the pipeline
+   * @returns - Returns this for chaining
+   */
+  use(handler: MiddlewareHandler): this {
+    return this.extendPipeline(handler);
+  }
 }
 
 // Re-export RequestContext for handlers
