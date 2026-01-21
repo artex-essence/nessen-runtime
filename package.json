@@ -14,7 +14,7 @@
     "lint": "eslint src test --ext .ts",
     "verify": "npm run typecheck && npm run build && npm run lint",
     "audit": "npm audit --production",
-    "test": "npm run verify && tsc -p tsconfig.test.json && node dist-test/test/basic.test.js && node dist-test/test/runtime.lifecycle.test.js && node dist-test/test/runtime.timeout.test.js && node dist-test/test/router.match.test.js && node dist-test/test/middleware.pipeline.test.js && node dist-test/test/validation.test.js && node dist-test/test/headers.test.js && node dist-test/test/headers.limit.test.js"
+    "test": "npm run verify && tsc -p tsconfig.test.json && node test-runner.js"
   },
   "repository": {
     "type": "git",
