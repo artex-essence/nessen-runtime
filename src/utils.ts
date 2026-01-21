@@ -113,7 +113,8 @@ export function isValidHost(hostHeader: string, validHosts: string[]): boolean {
   if (!hostHeader) return false;
 
   // Extract hostname without port
-  const [hostname] = hostHeader.split(':');
+  const parts = hostHeader.split(':');
+  const hostname = parts.length > 0 && parts[0] ? parts[0] : hostHeader;
 
   return validHosts.some((valid) => {
     // Wildcard: match all

@@ -14,6 +14,7 @@
  * @module middleware/logging
  */
 import type { MiddlewareHandler } from '../middleware.js';
+import type { Logger } from '../logger.js';
 /**
  * Log levels for filtering.
  */
@@ -45,6 +46,7 @@ export interface LoggingConfig {
     minLevel?: LogLevel;
     includeHeaders?: boolean;
     includeBody?: boolean;
+    logger?: Logger;
 }
 /**
  * Creates a logging middleware with configuration.
@@ -62,5 +64,5 @@ export interface LoggingConfig {
  * const logging = createLoggingMiddleware({ minLevel: LogLevel.INFO });
  * pipeline.use(logging);
  */
-export declare function createLoggingMiddleware(_config?: LoggingConfig): MiddlewareHandler;
+export declare function createLoggingMiddleware(config?: LoggingConfig): MiddlewareHandler;
 //# sourceMappingURL=logging.d.ts.map

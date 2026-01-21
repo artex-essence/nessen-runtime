@@ -17,6 +17,9 @@ modcli/tests_disabled/
 /build/
 /compiler/build/
 
+# Test Build Artifacts
+/dist-test/
+
 # Dependencies
 /node_modules/
 /vendor/

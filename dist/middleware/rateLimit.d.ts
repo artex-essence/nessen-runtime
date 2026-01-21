@@ -13,7 +13,7 @@
  *
  * @module middleware/rateLimit
  */
-import type { MiddlewareContext, MiddlewareHandler } from '../middleware.js';
+import type { MiddlewareHandler } from '../middleware.js';
 /**
  * Rate limiting configuration.
  */
@@ -22,8 +22,8 @@ export interface RateLimitConfig {
     maxRequests?: number;
     /** Time window in milliseconds (default: 60000 = 1 minute) */
     windowMs?: number;
-    /** Function to extract rate limit key from context (default: client IP) */
-    keyGenerator?: (ctx: MiddlewareContext) => string;
+    /** Function to extract rate limit key from headers (default: client IP) */
+    keyGenerator?: (headers: Record<string, string | string[] | undefined>, remoteAddress: string | undefined) => string;
     /** Maximum keys to track in memory (default: 10000) */
     maxKeys?: number;
     /** Cleanup interval in milliseconds (default: 60000) */

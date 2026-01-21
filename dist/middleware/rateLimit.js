@@ -36,7 +36,7 @@ const response_js_1 = require("../response.js");
 function createRateLimitMiddleware(config = {}) {
     const maxRequests = config.maxRequests ?? 100;
     const windowMs = config.windowMs ?? 60000;
-    const keyGenerator = config.keyGenerator ?? ((ctx) => ctx.remoteAddress ?? 'unknown');
+    const keyGenerator = config.keyGenerator ?? ((_headers, remoteAddress) => remoteAddress ?? 'unknown');
     const maxKeys = config.maxKeys ?? 10000;
     const cleanupIntervalMs = config.cleanupIntervalMs ?? 60000;
     const buckets = new Map();
@@ -47,7 +47,7 @@ function createRateLimitMiddleware(config = {}) {
     // Make sure cleanup doesn't keep process alive
     cleanupInterval.unref();
     return async (ctx, next) => {
-        const key = keyGenerator(ctx);
+        const key = keyGenerator(ctx.headers, ctx.remoteAddress);
         // Check rate limit
         if (!allowRequest(key, maxRequests, windowMs, buckets, maxKeys)) {
             // Rate limit exceeded
@@ -93,7 +93,7 @@ function allowRequest(key, maxRequests, windowMs, buckets, maxKeys) {
     }
     // Refill tokens based on elapsed time
     const elapsed = now - bucket.lastRefillTime;
-    const refill = (elapsed / windowMs) * maxRequests;
+    const refill = windowMs > 0 ? (elapsed / windowMs) * maxRequests : 0;
     bucket.tokens = Math.min(maxRequests, bucket.tokens + refill);
     bucket.lastRefillTime = now;
     // Check if we have tokens

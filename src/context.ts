@@ -27,6 +27,7 @@ import type { RequestClassification } from './classify.js';
  * - intent: Classified intent (page, api, asset, health, unknown)
  * - expects: Expected response format (html, json, svg, text, stream)
  * - params: Extracted path parameters (from /badge/:label/:value.svg)
+ * - abortSignal: AbortSignal for request cancellation (timeout, client disconnect)
  */
 export interface RequestContext {
   readonly id: string;
@@ -42,6 +43,7 @@ export interface RequestContext {
   readonly startTime: number;
   readonly body?: Buffer;
   readonly params: Record<string, string>;
+  readonly abortSignal?: AbortSignal;
 }
 
 /**
@@ -54,12 +56,14 @@ export interface RequestContext {
  * @param envelope - Request envelope with HTTP data
  * @param classification - Request classification with intent and format
  * @param params - Optional extracted path parameters
+ * @param abortSignal - Optional AbortSignal for request cancellation
  * @returns Immutable request context
  */
 export function createContext(
   envelope: RequestEnvelope,
   classification: RequestClassification,
-  params: Record<string, string> = {}
+  params: Record<string, string> = {},
+  abortSignal?: AbortSignal
 ): RequestContext {
   return {
     id: envelope.id,
@@ -75,5 +79,6 @@ export function createContext(
     startTime: envelope.startTime,
     body: envelope.body,
     params: Object.freeze({ ...params }),
+    abortSignal,
   };
 }

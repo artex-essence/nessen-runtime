@@ -40,14 +40,32 @@ function handleLiveness(state) {
  * Used by orchestration platforms to determine if the instance should
  * receive traffic. Returns 503 if draining, degraded, or not yet started.
  *
+ * Optionally runs custom readiness checks (e.g., database connections).
+ * If any check fails, returns 503 with failure details.
+ *
  * @param state - Runtime state manager
+ * @param checks - Optional array of custom readiness checks
  * @returns 200 if ready, 503 if not ready (includes reason)
  */
-function handleReadiness(state) {
-    if (state.isReady()) {
-        return (0, response_js_1.textResponse)('Ready', 200);
+async function handleReadiness(state, checks = []) {
+    // Check runtime state first
+    if (!state.isReady()) {
+        return (0, response_js_1.textResponse)(`Not ready: ${state.current}`, 503);
     }
-    return (0, response_js_1.textResponse)(`Not ready: ${state.current}`, 503);
+    // Run custom readiness checks
+    try {
+        for (let i = 0; i < checks.length; i++) {
+            const result = await checks[i]();
+            if (!result) {
+                return (0, response_js_1.textResponse)(`Readiness check ${i + 1} failed`, 503);
+            }
+        }
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return (0, response_js_1.textResponse)(`Readiness check error: ${message}`, 503);
+    }
+    return (0, response_js_1.textResponse)('Ready', 200);
 }
 /**
  * Handles GET /api/health (detailed health check).

@@ -19,12 +19,12 @@ import { handleHome, handleBadge } from './handlers.js';
 import { handleLiveness, handleReadiness, handleHealthApi } from './health.js';
 import { errorResponse, serviceUnavailableResponse, notFoundResponse } from './response.js';
 import { isPathSafe } from './utils.js';
-import { MiddlewarePipeline, type RequestHandler } from './middleware.js';
+import { MiddlewarePipeline, type MiddlewareHandler, type RequestHandler } from './middleware.js';
 import { createLoggingMiddleware } from './middleware/logging.js';
 import { createRateLimitMiddleware } from './middleware/rateLimit.js';
 import { createCompressionMiddleware } from './middleware/compression.js';
-
-const REQUEST_TIMEOUT_MS = 30000; // 30 seconds per-request timeout
+import { createConfig, type RuntimeConfig } from './config.js';
+import type { Logger } from './logger.js';
 
 /**
  * Core runtime engine. Single instance created by server.ts.
@@ -34,25 +34,35 @@ export class Runtime {
   private readonly telemetry: Telemetry;
   private readonly router: Router;
   private readonly pipeline: MiddlewarePipeline;
+  private readonly config: RuntimeConfig;
+  private readonly logger: Logger;
 
-  constructor() {
+  constructor(config: RuntimeConfig = createConfig(), logger: Logger = console) {
     this.state = new StateManager();
     this.telemetry = new Telemetry();
     this.router = new Router();
+    this.config = config;
+    this.logger = logger;
     this.pipeline = new MiddlewarePipeline()
-      .use(createLoggingMiddleware())
-      .use(createRateLimitMiddleware())
+      .use(createLoggingMiddleware({ logger }))
+      .use(
+        createRateLimitMiddleware({
+          maxRequests: this.config.rateLimitMaxRequests,
+          windowMs: this.config.rateLimitWindowMs,
+          maxKeys: this.config.rateLimitMaxKeys,
+          cleanupIntervalMs: this.config.rateLimitCleanupMs,
+          keyGenerator: this.config.rateLimitKeyExtractor,
+        })
+      )
       .use(createCompressionMiddleware());
 
     // Register routes
     this.setupRoutes();
 
-    // Transition to READY after initialization
-    setTimeout(() => {
-      if (this.state.transition('READY')) {
-        console.log('[runtime] State: READY');
-      }
-    }, 100);
+    // Transition to READY immediately (initialization is synchronous)
+    if (this.state.transition('READY')) {
+      this.logger.info('[runtime] State: READY');
+    }
   }
 
   /**
@@ -78,38 +88,47 @@ export class Runtime {
     // Record request start
     this.telemetry.requestStart();
 
+    // Create AbortController for request cancellation
+    const abortController = new AbortController();
+    let timeoutHandle: NodeJS.Timeout | undefined;
+
     let responseSize = 0;
     try {
-      let timeoutHandle: NodeJS.Timeout | undefined;
       const timeout = new Promise<RuntimeResponse>((resolve) => {
         timeoutHandle = setTimeout(() => {
-          resolve(errorResponse('Request timeout', 503, false, undefined, envelope.id));
-        }, REQUEST_TIMEOUT_MS);
+          abortController.abort('Request timeout');
+          resolve(errorResponse('Request timeout', 504, false, undefined, envelope.id));
+        }, this.config.requestTimeoutMs);
         timeoutHandle.unref?.();
       });
 
       const response = await Promise.race([
-        this.handleInternal(envelope),
+        this.handleInternal(envelope, abortController.signal),
         timeout,
       ]);
-
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
 
       // Calculate response size for telemetry
       responseSize = Buffer.isBuffer(response.body)
         ? response.body.length
         : Buffer.byteLength(response.body, 'utf8');
 
+      // Enforce response size limits
+      if (responseSize > this.config.maxResponseSize) {
+        return errorResponse('Response too large', 413, false, undefined, envelope.id);
+      }
+
       return response;
     } catch (error) {
-      console.error(`[runtime] [${envelope.id}] Error handling request:`, error);
+      this.logger.error(`[runtime] [${envelope.id}] Error handling request:`, { error });
       const err = error instanceof Error ? error : new Error(String(error));
       const errorResp = errorResponse('Internal server error', 500, false, err, envelope.id);
       responseSize = Buffer.byteLength(errorResp.body.toString(), 'utf8');
       return errorResp;
     } finally {
+      // Clear timeout timer
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
       // Record request end with response size
       this.telemetry.requestEnd(envelope.startTime, responseSize);
     }
@@ -118,7 +137,7 @@ export class Runtime {
   /**
    * Internal request handling (after state gating).
    */
-  private async handleInternal(envelope: RequestEnvelope): Promise<RuntimeResponse> {
+  private async handleInternal(envelope: RequestEnvelope, abortSignal: AbortSignal): Promise<RuntimeResponse> {
     // Classify request
     const classification = classifyRequest(envelope);
 
@@ -134,8 +153,8 @@ export class Runtime {
       return notFoundResponse(classification.pathInfo, classification.expects === 'json', envelope.id);
     }
 
-    // Build context
-    const ctx = createContext(envelope, classification, match.params);
+    // Build context with abort signal
+    const ctx = createContext(envelope, classification, match.params, abortSignal);
 
     // Dispatch through middleware pipeline and handler
     const finalHandler: RequestHandler = (context) => this.dispatch(match.handler, context);
@@ -145,7 +164,7 @@ export class Runtime {
   /**
    * Dispatch to named handler.
    */
-  private dispatch(handler: string, ctx: import('./context.js').RequestContext): RuntimeResponse {
+  private dispatch(handler: string, ctx: import('./context.js').RequestContext): RuntimeResponse | Promise<RuntimeResponse> {
     switch (handler) {
       case 'home':
         return handleHome(ctx, this.state.current);
@@ -154,6 +173,7 @@ export class Runtime {
         return handleLiveness(this.state);
 
       case 'readiness':
+        // Note: handleReadiness returns Promise<RuntimeResponse>
         return handleReadiness(this.state);
 
       case 'healthApi':
@@ -179,6 +199,14 @@ export class Runtime {
    */
   getTelemetry(): Telemetry {
     return this.telemetry;
+  }
+
+  /**
+   * Allow callers to extend the middleware pipeline with custom middleware.
+   */
+  extendPipeline(handler: MiddlewareHandler): this {
+    this.pipeline.use(handler);
+    return this;
   }
 }
 

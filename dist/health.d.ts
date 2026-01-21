@@ -15,6 +15,13 @@ import type { StateManager } from './state.js';
 import type { Telemetry } from './telemetry.js';
 import type { RuntimeResponse } from './envelope.js';
 /**
+ * Readiness check function type.
+ *
+ * Returns true if dependency is healthy, false otherwise.
+ * Use for checking database connections, external APIs, etc.
+ */
+export type ReadinessCheck = () => boolean | Promise<boolean>;
+/**
  * Handles GET /health (liveness probe).
  *
  * Returns 200 OK if the process is alive and running.
@@ -32,10 +39,14 @@ export declare function handleLiveness(state: StateManager): RuntimeResponse;
  * Used by orchestration platforms to determine if the instance should
  * receive traffic. Returns 503 if draining, degraded, or not yet started.
  *
+ * Optionally runs custom readiness checks (e.g., database connections).
+ * If any check fails, returns 503 with failure details.
+ *
  * @param state - Runtime state manager
+ * @param checks - Optional array of custom readiness checks
  * @returns 200 if ready, 503 if not ready (includes reason)
  */
-export declare function handleReadiness(state: StateManager): RuntimeResponse;
+export declare function handleReadiness(state: StateManager, checks?: ReadinessCheck[]): Promise<RuntimeResponse>;
 /**
  * Handles GET /api/health (detailed health check).
  *

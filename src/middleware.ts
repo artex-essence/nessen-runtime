@@ -43,8 +43,9 @@ export type MiddlewareHandler = (
 
 /**
  * Request handler function (the final destination of middleware chain).
+ * Can return RuntimeResponse synchronously or asynchronously.
  */
-export type RequestHandler = (ctx: RequestContext) => RuntimeResponse;
+export type RequestHandler = (ctx: RequestContext) => RuntimeResponse | Promise<RuntimeResponse>;
 
 /**
  * Middleware pipeline: chains middleware with a final handler.

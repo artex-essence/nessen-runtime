@@ -16,6 +16,43 @@
 import { performance } from 'perf_hooks';
 import { cpuUsage, memoryUsage } from 'process';
 
+/**
+ * Telemetry sink for exporting metrics to external systems.
+ */
+export interface TelemetrySink {
+  /**
+   * Record a counter increment.
+   */
+  incrementCounter(name: string, value: number, tags?: Record<string, string>): void;
+
+  /**
+   * Record a timing measurement.
+   */
+  recordTiming(name: string, durationMs: number, tags?: Record<string, string>): void;
+
+  /**
+   * Record a gauge value.
+   */
+  recordGauge(name: string, value: number, tags?: Record<string, string>): void;
+}
+
+/**
+ * No-op telemetry sink (default).
+ */
+export class NoOpTelemetrySink implements TelemetrySink {
+  incrementCounter(): void {
+    // no-op
+  }
+
+  recordTiming(): void {
+    // no-op
+  }
+
+  recordGauge(): void {
+    // no-op
+  }
+}
+
 export interface TelemetrySnapshot {
   readonly requestsTotal: number;      // Total requests processed since startup
   readonly requestsActive: number;     // Currently in-flight requests
@@ -66,9 +103,11 @@ export class Telemetry {
   private cachedSnapshot: TelemetrySnapshot | null = null;
   private lastSnapshotTime: number = 0;
   private readonly snapshotCacheTtlMs = 100; // Cache snapshots for 100ms
+  private readonly sink: TelemetrySink;
 
-  constructor() {
+  constructor(sink: TelemetrySink = new NoOpTelemetrySink()) {
     this.snapshot = this.buildSnapshot();
+    this.sink = sink;
     this.startEventLoopMonitoring();
   }
 
@@ -79,6 +118,8 @@ export class Telemetry {
   requestStart(): void {
     this.requestsTotal++;
     this.requestsActive++;
+    this.sink.incrementCounter('requests.total', 1);
+    this.sink.recordGauge('requests.active', this.requestsActive);
   }
 
   /**
@@ -95,6 +136,11 @@ export class Telemetry {
     const durationMs = Date.now() - startTime;
 
     this.recentTimings.push({ durationMs, responseBytes });
+
+    // Emit metrics
+    this.sink.recordTiming('request.duration', durationMs);
+    this.sink.recordGauge('requests.active', this.requestsActive);
+    this.sink.recordGauge('response.size', responseBytes);
 
     // Enforce bounded history (prevent unbounded growth)
     if (this.recentTimings.length > this.maxTimings) {

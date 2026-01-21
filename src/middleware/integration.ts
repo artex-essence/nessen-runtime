@@ -38,7 +38,7 @@ export function createProductionPipeline(): MiddlewarePipeline {
     createRateLimitMiddleware({
       maxRequests: 10000,           // Max 10,000 requests
       windowMs: 60000,        // Per 60 seconds
-      keyGenerator: (ctx) => ctx.remoteAddress || 'unknown',  // Rate limit by IP address
+      keyGenerator: (_headers, remoteAddress) => remoteAddress || 'unknown',  // Rate limit by IP address
     })
   );
 
@@ -70,7 +70,7 @@ export function createHighPerformancePipeline(): MiddlewarePipeline {
     createRateLimitMiddleware({
       maxRequests: 50000,           // Higher limit for high-performance scenario
       windowMs: 60000,
-      keyGenerator: (ctx) => ctx.remoteAddress || 'unknown',
+      keyGenerator: (_headers, remoteAddress) => remoteAddress || 'unknown',
     })
   );
 

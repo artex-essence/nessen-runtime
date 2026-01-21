@@ -50,50 +50,74 @@ type MiddlewareHandler = (
 
 ### Logging Middleware
 
-Structured JSON logging with request timing.
+Structured JSON logging with request timing. Integrates with pluggable logger system.
 
 #### Usage
 
 ```typescript
 import { createLoggingMiddleware } from './src/middleware/logging';
+import { createDefaultLogger, StructuredLogger, ConsoleLogger } from './src/logger';
 
-runtime.use(createLoggingMiddleware());
+// Production: Environment-driven structured logger
+const logger = createDefaultLogger();  // Respects LOG_FORMAT, LOG_LEVEL, NODE_ENV
+runtime.use(createLoggingMiddleware({ logger }));
+
+// Development: Console logger
+const consoleLogger = new ConsoleLogger();
+runtime.use(createLoggingMiddleware({ logger: consoleLogger }));
+
+// Custom: Structured JSON logger with specific level
+const structuredLogger = new StructuredLogger('info');
+runtime.use(createLoggingMiddleware({ logger: structuredLogger }));
 ```
 
-#### Output Format
+**Configuration Options:**
+```typescript
+interface LoggingMiddlewareConfig {
+  logger: Logger;              // Required: Logger instance
+  minLevel?: LogLevel;         // Optional: Minimum log level (default: info)
+  includeBody?: boolean;       // Optional: Include request/response bodies (default: false)
+}
+```
+
+**Note:** Logger parameter is now **required** for all middleware. All internal console.log calls have been replaced with structured logging.
+
+#### Output Format (StructuredLogger)
 
 ```json
 {
   "timestamp": "2026-01-21T10:30:45.123Z",
   "level": "info",
-  "requestId": "550e8400-e29b-41d4-a716-446655440000",
+  "message": "GET /api/users 200 12ms",
+  "requestId": "req-550e8400e29b-1642768245123",
   "method": "GET",
   "path": "/api/users",
   "status": 200,
-  "duration": 12.5,
-  "userAgent": "Mozilla/5.0..."
+  "duration": 12
 }
 ```
 
-#### Configuration
+#### Logger Interface
 
 ```typescript
-createLoggingMiddleware({
-  logBody: false,          // Don't log request/response bodies
-  logHeaders: false,       // Don't log headers
-  excludePaths: ['/health', '/ready']  // Skip logging these paths
-})
+interface Logger {
+  debug(message: string, meta?: Record<string, unknown>): void;
+  info(message: string, meta?: Record<string, unknown>): void;
+  warn(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, meta?: Record<string, unknown>): void;
+}
 ```
 
-#### Log Levels
+#### Environment Variables
 
-- **info** - Successful requests (2xx, 3xx)
-- **warn** - Client errors (4xx)
-- **error** - Server errors (5xx)
+- `LOG_FORMAT=json` - Use structured JSON output (StructuredLogger)
+- `LOG_FORMAT=console` - Use console output (ConsoleLogger)
+- `LOG_LEVEL=debug|info|warn|error` - Minimum log level
+- `NODE_ENV=production` - Automatically enables JSON logging
 
 ### Rate Limiting Middleware
 
-Token bucket algorithm with per-IP tracking.
+Token bucket algorithm with configurable key extraction (IP, user ID, API key, etc.).
 
 #### Usage
 
@@ -101,41 +125,56 @@ Token bucket algorithm with per-IP tracking.
 import { createRateLimitMiddleware } from './src/middleware/rateLimit';
 
 runtime.use(createRateLimitMiddleware({
-  limit: 1000,      // 1000 requests
-  window: 60000     // per 60 seconds
+  maxRequests: 1000,      // 1000 requests
+  windowMs: 60000         // per 60 seconds
 }));
 ```
 
 #### Configuration Options
 
 ```typescript
-interface RateLimitOptions {
-  limit: number;          // Max requests per window
-  window: number;         // Time window in milliseconds
-  keyGenerator?: (ctx: MiddlewareContext) => string;  // Custom key function
-  skip?: (ctx: MiddlewareContext) => boolean;         // Skip rate limiting
+interface RateLimitConfig {
+  maxRequests?: number;          // Max requests per window (default: 100)
+  windowMs?: number;             // Time window in milliseconds (default: 60000)
+  keyGenerator?: (headers: Record<string, string | string[] | undefined>, remoteAddress: string | undefined) => string;
+  maxKeys?: number;              // Max keys to track in memory (default: 10000)
+  cleanupIntervalMs?: number;    // Cleanup interval (default: 60000)
 }
 ```
 
 #### Custom Key Generator
 
-Rate limit by user ID instead of IP:
+Rate limit by user ID from header:
 
 ```typescript
 createRateLimitMiddleware({
-  limit: 100,
-  window: 60000,
-  keyGenerator: (ctx) => ctx.metadata.userId as string || ctx.headers['x-forwarded-for'] || 'anonymous'
+  maxRequests: 100,
+  windowMs: 60000,
+  keyGenerator: (headers, remoteAddress) => {
+    // Priority: X-User-ID header > X-Forwarded-For > remoteAddress
+    const userId = headers['x-user-id'];
+    if (userId && typeof userId === 'string') return userId;
+    
+    const forwardedFor = headers['x-forwarded-for'];
+    if (forwardedFor && typeof forwardedFor === 'string') {
+      return forwardedFor.split(',')[0].trim();
+    }
+    
+    return remoteAddress || 'unknown';
+  }
 })
 ```
 
-#### Skip Certain Paths
+#### Rate limit by API key:
 
 ```typescript
 createRateLimitMiddleware({
-  limit: 1000,
-  window: 60000,
-  skip: (ctx) => ctx.path === '/health' || ctx.path === '/ready'
+  maxRequests: 10000,
+  windowMs: 3600000,  // 1 hour
+  keyGenerator: (headers, remoteAddress) => {
+    const apiKey = headers['x-api-key'];
+    return typeof apiKey === 'string' ? apiKey : remoteAddress || 'anonymous';
+  }
 })
 ```
 
@@ -144,10 +183,7 @@ createRateLimitMiddleware({
 When rate limited:
 ```
 HTTP/1.1 429 Too Many Requests
-X-RateLimit-Limit: 1000
-X-RateLimit-Remaining: 0
-X-RateLimit-Reset: 1642768245
-Retry-After: 45
+Retry-After: 60
 ```
 
 #### Cleanup
@@ -208,6 +244,69 @@ Vary: Accept-Encoding
 - **Brotli:** 70-80% size reduction, ~3ms overhead
 - **Gzip:** 65-75% size reduction, ~2ms overhead
 - **CPU:** Minimal impact at default level (6)
+
+### Security Headers Middleware
+
+OWASP best practices for HTTP security headers.
+
+#### Usage
+
+```typescript
+import { createSecurityHeadersMiddleware } from './src/middleware/securityHeaders';
+
+runtime.use(createSecurityHeadersMiddleware());
+```
+
+#### Default Headers
+
+```
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-XSS-Protection: 1; mode=block
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: geolocation=(), microphone=(), camera=()
+Content-Security-Policy: default-src 'self'; script-src 'self'; object-src 'none'
+```
+
+#### Configuration
+
+```typescript
+createSecurityHeadersMiddleware({
+  contentTypeOptions: true,           // Enable X-Content-Type-Options
+  frameOptions: 'SAMEORIGIN',         // or 'DENY', false to disable
+  xssProtection: true,                // Enable X-XSS-Protection
+  hstsMaxAge: 31536000,              // HSTS max-age (false to disable)
+  hstsIncludeSubDomains: true,       // Include subdomains in HSTS
+  referrerPolicy: 'no-referrer',     // Referrer policy
+  permissionsPolicy: 'camera=(), microphone=()',  // Permissions policy
+  contentSecurityPolicy: "default-src 'self'",    // CSP directives
+})
+```
+
+#### Disable Specific Headers
+
+```typescript
+createSecurityHeadersMiddleware({
+  hstsMaxAge: false,                  // Disable HSTS (dev/HTTP)
+  contentSecurityPolicy: false,       // Disable CSP
+  frameOptions: false,                // Disable X-Frame-Options
+})
+```
+
+#### Custom CSP
+
+```typescript
+createSecurityHeadersMiddleware({
+  contentSecurityPolicy: [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' cdn.example.com",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "connect-src 'self' api.example.com",
+  ].join('; ')
+})
+```
 
 ## Creating Custom Middleware
 

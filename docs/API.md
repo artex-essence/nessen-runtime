@@ -19,14 +19,38 @@ The core runtime engine that handles request processing.
 ### Constructor
 
 ```typescript
-const runtime = new Runtime();
+import { createDefaultLogger } from './logger.js';
+import { createConfig } from './config.js';
+
+const logger = createDefaultLogger();
+const config = createConfig();
+const runtime = new Runtime(config, logger);
 ```
 
 Creates a new runtime instance. Initializes:
-- State machine (STARTING → READY)
-- Telemetry collection
-- Router
-- Built-in routes (/health, /ready, /api/health)
+- State machine (immediately transitions to READY, no timer delay)
+- Telemetry collection with pluggable export sinks
+- Router with O(1) exact matching and efficient parameter patterns
+- Built-in routes (/health, /ready, /api/health) with async readiness hooks
+- Middleware pipeline (logging, rate limiting, compression, security headers)
+
+**Parameters:**
+- `config` - RuntimeConfig instance (optional, defaults to createConfig())
+  - Includes validation for all limits (body size, URL length, headers, timeouts, rate limits)
+  - Environment variable support with NaN validation
+  - See `docs/config.md` for complete reference
+- `logger` - Logger instance (required for structured logging)
+  - Use `createDefaultLogger()` for production (respects LOG_FORMAT, LOG_LEVEL, NODE_ENV)
+  - Use `ConsoleLogger` for development
+  - Use `StructuredLogger` for custom JSON output
+
+**Logging Options:**
+- **Production:** Use `createDefaultLogger()` which respects LOG_FORMAT, LOG_LEVEL, NODE_ENV
+- **Development:** Pass `new ConsoleLogger()` or `console` for simple output
+- **Structured:** Use `new StructuredLogger('info')` for JSON output (stderr for errors, stdout for info)
+- **Custom:** Implement Logger interface for custom logging backends
+
+**Security:** All inputs validated, bounded collections, event listeners properly cleaned up
 
 ### Methods
 
@@ -477,54 +501,160 @@ DRAINING → STOPPING
 
 ## Telemetry
 
-Performance metrics collection.
+Performance metrics collection with pluggable export for monitoring systems.
 
-### Metrics Available
+### TelemetrySink Interface
 
 ```typescript
-interface TelemetrySnapshot {
-  totalRequests: number;
-  activeRequests: number;
-  errorCount: number;
-  p50: number;  // Median latency (ms)
-  p95: number;  // 95th percentile latency (ms)
-  p99: number;  // 99th percentile latency (ms)
+export interface TelemetrySink {
+  incrementCounter(name: string, value: number, tags?: Record<string, string>): void;
+  recordTiming(name: string, durationMs: number, tags?: Record<string, string>): void;
+  recordGauge(name: string, value: number, tags?: Record<string, string>): void;
 }
 ```
 
-### Accessing Metrics
+### Emitted Metrics
 
-Metrics are exposed via `/api/health` endpoint:
+**Counters:**
+- `requests.total` - Total requests processed (tags: method, status)
 
-```bash
-curl http://localhost:3000/api/health
+**Gauges:**
+- `requests.active` - Currently active requests
+- `response.size` - Response body size in bytes
+
+**Timings:**
+- `request.duration` - Request processing time in milliseconds
+
+### Default Telemetry (No Export)
+
+```typescript
+import { Telemetry } from './telemetry';
+
+const telemetry = new Telemetry();  // Uses NoOpTelemetrySink
+```
+
+### Prometheus Integration
+
+```typescript
+import { Telemetry } from './telemetry';
+import { register, Counter, Gauge, Histogram } from 'prom-client';
+
+class PrometheusSink implements TelemetrySink {
+  private counters = new Map<string, Counter>();
+  private gauges = new Map<string, Gauge>();
+  private histograms = new Map<string, Histogram>();
+
+  incrementCounter(name: string, value: number, tags?: Record<string, string>): void {
+    if (!this.counters.has(name)) {
+      this.counters.set(name, new Counter({ name, help: name, labelNames: Object.keys(tags || {}) }));
+    }
+    this.counters.get(name)!.inc(tags, value);
+  }
+
+  recordTiming(name: string, durationMs: number, tags?: Record<string, string>): void {
+    if (!this.histograms.has(name)) {
+      this.histograms.set(name, new Histogram({ name, help: name, labelNames: Object.keys(tags || {}) }));
+    }
+    this.histograms.get(name)!.observe(tags, durationMs / 1000);
+  }
+
+  recordGauge(name: string, value: number, tags?: Record<string, string>): void {
+    if (!this.gauges.has(name)) {
+      this.gauges.set(name, new Gauge({ name, help: name, labelNames: Object.keys(tags || {}) }));
+    }
+    this.gauges.get(name)!.set(tags, value);
+  }
+}
+
+const telemetry = new Telemetry(new PrometheusSink());
+```
+
+### StatsD Integration
+
+```typescript
+import { StatsD } from 'node-statsd';
+
+class StatsDSink implements TelemetrySink {
+  private client: StatsD;
+
+  constructor(host: string, port: number) {
+    this.client = new StatsD({ host, port });
+  }
+
+  incrementCounter(name: string, value: number, tags?: Record<string, string>): void {
+    this.client.increment(name, value, tags);
+  }
+
+  recordTiming(name: string, durationMs: number, tags?: Record<string, string>): void {
+    this.client.timing(name, durationMs, tags);
+  }
+
+  recordGauge(name: string, value: number, tags?: Record<string, string>): void {
+    this.client.gauge(name, value, tags);
+  }
+}
+
+const telemetry = new Telemetry(new StatsDSink('localhost', 8125));
+```
+
+### OpenTelemetry Integration
+
+```typescript
+import { MeterProvider } from '@opentelemetry/sdk-metrics';
+import { Resource } from '@opentelemetry/resources';
+
+class OTelSink implements TelemetrySink {
+  private meter;
+
+  constructor() {
+    const provider = new MeterProvider({ resource: new Resource({ 'service.name': 'nessen-runtime' }) });
+    this.meter = provider.getMeter('nessen-runtime');
+  }
+
+  incrementCounter(name: string, value: number, tags?: Record<string, string>): void {
+    const counter = this.meter.createCounter(name);
+    counter.add(value, tags);
+  }
+
+  recordTiming(name: string, durationMs: number, tags?: Record<string, string>): void {
+    const histogram = this.meter.createHistogram(name);
+    histogram.record(durationMs, tags);
+  }
+
+  recordGauge(name: string, value: number, tags?: Record<string, string>): void {
+    const gauge = this.meter.createObservableGauge(name);
+    gauge.addCallback((result) => result.observe(value, tags));
+  }
+}
+
+const telemetry = new Telemetry(new OTelSink());
+```
+
+### Snapshot Access
+
+Internal snapshot API for health endpoints:
+
+```typescript
+const snapshot = telemetry.getSnapshot();
+console.log({
+  totalRequests: snapshot.requestsTotal,
+  activeRequests: snapshot.requestsActive,
+  p50: snapshot.requestDurationP50Ms,
+  p95: snapshot.requestDurationP95Ms,
+  p99: snapshot.requestDurationP99Ms,
+});
 ```
 
 Response:
 ```json
 {
-  "status": "healthy",
-  "uptime": 1234.56,
-  "requests": {
-    "total": 5000,
-    "active": 3,
-    "errors": 2
-  },
-  "latency": {
-    "p50": 2.1,
-    "p95": 4.8,
-    "p99": 8.2
-  }
+  "totalRequests": 5000,
+  "activeRequests": 3,
+  "p50": 2.1,
+  "p95": 4.8,
+  "p99": 8.2
 }
 ```
-
-### Latency Calculation
-
-Percentiles calculated using quickselect algorithm (O(n) average case).
-
-**Sample window:** Last 1000 requests
-
-**Precision:** Milliseconds with 1 decimal place
 
 ## Security Features
 

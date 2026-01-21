@@ -11,6 +11,7 @@
 import type { Server } from 'http';
 import type { StateManager } from './state.js';
 import type { Telemetry } from './telemetry.js';
+import type { Logger } from './logger.js';
 
 const DRAIN_TIMEOUT_MS = 30000; // 30 seconds max drain time
 const DRAIN_CHECK_INTERVAL_MS = 100; // Check every 100ms
@@ -25,6 +26,10 @@ export interface ShutdownResult {
   activeRequests: number;
 }
 
+// Track ongoing shutdown to ensure idempotency
+let shutdownInProgress: Promise<ShutdownResult> | null = null;
+let shutdownComplete: ShutdownResult | null = null;
+
 /**
  * Performs graceful shutdown sequence with proper cleanup.
  *
@@ -33,7 +38,10 @@ export interface ShutdownResult {
  * 2. Close HTTP server to reject new connections
  * 3. Wait for active requests to complete (with timeout)
  * 4. Transition to STOPPING state
- * 5. Exit process
+ * 5. Return result (caller decides whether to exit)
+ *
+ * IDEMPOTENCY: Safe to call multiple times. If shutdown is already in progress,
+ * returns the same promise. If already complete, returns the cached result.
  *
  * @param server - HTTP server to close
  * @param state - Runtime state manager
@@ -44,15 +52,50 @@ export async function gracefulShutdown(
   server: Server,
   state: StateManager,
   telemetry: Telemetry,
+  logger: Logger,
+  options: ShutdownOptions
+): Promise<ShutdownResult> {
+  // If shutdown already completed, return cached result
+  if (shutdownComplete) {
+    logger.info('Already completed, returning cached result');
+    return shutdownComplete;
+  }
+
+  // If shutdown in progress, return existing promise
+  if (shutdownInProgress) {
+    logger.info('Already in progress, waiting for completion');
+    return shutdownInProgress;
+  }
+
+  // Start new shutdown sequence
+  shutdownInProgress = performShutdown(server, state, telemetry, logger, options);
+  
+  try {
+    const result = await shutdownInProgress;
+    shutdownComplete = result;
+    return result;
+  } finally {
+    shutdownInProgress = null;
+  }
+}
+
+/**
+ * Internal shutdown implementation (called once per shutdown).
+ */
+async function performShutdown(
+  server: Server,
+  state: StateManager,
+  telemetry: Telemetry,
+  logger: Logger,
   options: ShutdownOptions
 ): Promise<ShutdownResult> {
   const { signal, timeout = DRAIN_TIMEOUT_MS } = options;
 
-  console.log(`[shutdown] Received ${signal}, starting graceful shutdown...`);
+  logger.info(`Received ${signal}, starting graceful shutdown...`);
 
   // Transition to DRAINING state (stops accepting new requests)
   if (!state.transition('DRAINING')) {
-    console.log('[shutdown] Already draining or stopped');
+    logger.info('Already draining or stopped');
     const snapshot = telemetry.getSnapshot();
     return { drained: snapshot.requestsActive === 0, activeRequests: snapshot.requestsActive };
   }
@@ -60,19 +103,19 @@ export async function gracefulShutdown(
   // Stop accepting new connections from clients
   server.close((err) => {
     if (err) {
-      console.error('[shutdown] Error closing server:', err);
+      logger.error('Error closing server:', { error: err });
     } else {
-      console.log('[shutdown] Server closed');
+      logger.info('Server closed');
     }
   });
 
   // Wait for active requests to complete or timeout
   const drainStart = Date.now();
-  const drainResult = await waitForDrain(telemetry, timeout, () => {
+  const drainResult = await waitForDrain(telemetry, logger, timeout, () => {
     const elapsed = Date.now() - drainStart;
     const snapshot = telemetry.getSnapshot();
-    console.log(
-      `[shutdown] Draining... (${elapsed}ms, ${snapshot.requestsActive} active requests)`
+    logger.debug(
+      `Draining... (${elapsed}ms, ${snapshot.requestsActive} active requests)`
     );
   });
 
@@ -81,7 +124,7 @@ export async function gracefulShutdown(
 
   // Transition to STOPPING state
   state.transition('STOPPING');
-  console.log('[shutdown] Graceful shutdown complete');
+  logger.info('Graceful shutdown complete');
 
   return drainResult;
 }
@@ -93,11 +136,13 @@ export async function gracefulShutdown(
  * Exits early if no requests are active. Logs progress periodically.
  *
  * @param telemetry - Telemetry system to check request count
+ * @param logger - Logger for progress messages
  * @param timeoutMs - Maximum time to wait before forcing shutdown
  * @param onTick - Callback to log progress
  */
 async function waitForDrain(
   telemetry: Telemetry,
+  logger: Logger,
   timeoutMs: number,
   onTick: () => void
 ): Promise<ShutdownResult> {
@@ -107,7 +152,7 @@ async function waitForDrain(
     // Check active request count from telemetry
     const snapshot = telemetry.getSnapshot();
     if (snapshot.requestsActive === 0) {
-      console.log('[shutdown] All active requests completed');
+      logger.info('All active requests completed');
       return { drained: true, activeRequests: 0 };
     }
 
@@ -117,8 +162,8 @@ async function waitForDrain(
   }
 
   const remaining = telemetry.getSnapshot().requestsActive;
-  console.warn(
-    `[shutdown] Drain timeout exceeded, forcing shutdown with ${remaining} active requests`
+  logger.warn(
+    `Drain timeout exceeded, forcing shutdown with ${remaining} active requests`
   );
   return { drained: false, activeRequests: remaining };
 }
@@ -155,17 +200,22 @@ export function setupSignalHandlers(
   server: Server,
   state: StateManager,
   telemetry: Telemetry,
-  onComplete?: (result: ShutdownResult, exitCode: number) => void
+  logger: Logger,
+  onComplete?: (result: ShutdownResult, exitCode: number) => void,
+  options?: { shutdownTimeoutMs?: number }
 ): void {
   const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
 
   const handle = async (signal: string, timeout?: number) => {
     try {
-      const result = await gracefulShutdown(server, state, telemetry, { signal, timeout });
+      const result = await gracefulShutdown(server, state, telemetry, logger, {
+        signal,
+        timeout: timeout ?? options?.shutdownTimeoutMs,
+      });
       const exitCode = result.drained ? 0 : 1;
       onComplete?.(result, exitCode);
     } catch (err) {
-      console.error('[shutdown] Fatal error during shutdown:', err);
+      logger.error('Fatal error during shutdown:', { error: err });
       onComplete?.({ drained: false, activeRequests: -1 }, 1);
     }
   };
@@ -173,19 +223,19 @@ export function setupSignalHandlers(
   // Normal shutdown signals
   signals.forEach(signal => {
     process.on(signal, () => {
-      void handle(signal);
+      void handle(signal, options?.shutdownTimeoutMs);
     });
   });
 
   // Uncaught exceptions
   process.on('uncaughtException', (err) => {
-    console.error('[fatal] Uncaught exception:', err);
-    void handle('uncaughtException', 5000);
+    logger.error('Uncaught exception:', { error: err });
+    void handle('uncaughtException', options?.shutdownTimeoutMs ?? 5000);
   });
 
   // Unhandled promise rejections
   process.on('unhandledRejection', (reason) => {
-    console.error('[fatal] Unhandled rejection:', reason);
-    void handle('unhandledRejection', 5000);
+    logger.error('Unhandled rejection:', { reason });
+    void handle('unhandledRejection', options?.shutdownTimeoutMs ?? 5000);
   });
 }

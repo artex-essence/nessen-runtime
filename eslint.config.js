@@ -21,6 +21,8 @@ module.exports = [
         require: 'readonly',
         module: 'readonly',
         NodeJS: 'readonly',
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
       },
     },
     rules: {

@@ -12,6 +12,31 @@
  *
  * @module telemetry
  */
+/**
+ * Telemetry sink for exporting metrics to external systems.
+ */
+export interface TelemetrySink {
+    /**
+     * Record a counter increment.
+     */
+    incrementCounter(name: string, value: number, tags?: Record<string, string>): void;
+    /**
+     * Record a timing measurement.
+     */
+    recordTiming(name: string, durationMs: number, tags?: Record<string, string>): void;
+    /**
+     * Record a gauge value.
+     */
+    recordGauge(name: string, value: number, tags?: Record<string, string>): void;
+}
+/**
+ * No-op telemetry sink (default).
+ */
+export declare class NoOpTelemetrySink implements TelemetrySink {
+    incrementCounter(): void;
+    recordTiming(): void;
+    recordGauge(): void;
+}
 export interface TelemetrySnapshot {
     readonly requestsTotal: number;
     readonly requestsActive: number;
@@ -56,7 +81,8 @@ export declare class Telemetry {
     private cachedSnapshot;
     private lastSnapshotTime;
     private readonly snapshotCacheTtlMs;
-    constructor();
+    private readonly sink;
+    constructor(sink?: TelemetrySink);
     /**
      * Records the start of a request.
      * Increments total request count and active request counter.

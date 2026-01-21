@@ -24,7 +24,7 @@ const middleware_js_1 = require("./middleware.js");
 const logging_js_1 = require("./middleware/logging.js");
 const rateLimit_js_1 = require("./middleware/rateLimit.js");
 const compression_js_1 = require("./middleware/compression.js");
-const REQUEST_TIMEOUT_MS = 30000; // 30 seconds per-request timeout
+const config_js_1 = require("./config.js");
 /**
  * Core runtime engine. Single instance created by server.ts.
  */
@@ -33,22 +33,30 @@ class Runtime {
     telemetry;
     router;
     pipeline;
-    constructor() {
+    config;
+    logger;
+    constructor(config = (0, config_js_1.createConfig)(), logger = console) {
         this.state = new state_js_1.StateManager();
         this.telemetry = new telemetry_js_1.Telemetry();
         this.router = new router_js_1.Router();
+        this.config = config;
+        this.logger = logger;
         this.pipeline = new middleware_js_1.MiddlewarePipeline()
-            .use((0, logging_js_1.createLoggingMiddleware)())
-            .use((0, rateLimit_js_1.createRateLimitMiddleware)())
+            .use((0, logging_js_1.createLoggingMiddleware)({ logger }))
+            .use((0, rateLimit_js_1.createRateLimitMiddleware)({
+            maxRequests: this.config.rateLimitMaxRequests,
+            windowMs: this.config.rateLimitWindowMs,
+            maxKeys: this.config.rateLimitMaxKeys,
+            cleanupIntervalMs: this.config.rateLimitCleanupMs,
+            keyGenerator: this.config.rateLimitKeyExtractor,
+        }))
             .use((0, compression_js_1.createCompressionMiddleware)());
         // Register routes
         this.setupRoutes();
-        // Transition to READY after initialization
-        setTimeout(() => {
-            if (this.state.transition('READY')) {
-                console.log('[runtime] State: READY');
-            }
-        }, 100);
+        // Transition to READY immediately (initialization is synchronous)
+        if (this.state.transition('READY')) {
+            this.logger.info('[runtime] State: READY');
+        }
     }
     /**
      * Setup routes during initialization.
@@ -70,36 +78,44 @@ class Runtime {
         }
         // Record request start
         this.telemetry.requestStart();
+        // Create AbortController for request cancellation
+        const abortController = new AbortController();
+        let timeoutHandle;
         let responseSize = 0;
         try {
-            let timeoutHandle;
             const timeout = new Promise((resolve) => {
                 timeoutHandle = setTimeout(() => {
-                    resolve((0, response_js_1.errorResponse)('Request timeout', 503, false, undefined, envelope.id));
-                }, REQUEST_TIMEOUT_MS);
+                    abortController.abort('Request timeout');
+                    resolve((0, response_js_1.errorResponse)('Request timeout', 504, false, undefined, envelope.id));
+                }, this.config.requestTimeoutMs);
                 timeoutHandle.unref?.();
             });
             const response = await Promise.race([
-                this.handleInternal(envelope),
+                this.handleInternal(envelope, abortController.signal),
                 timeout,
             ]);
-            if (timeoutHandle) {
-                clearTimeout(timeoutHandle);
-            }
             // Calculate response size for telemetry
             responseSize = Buffer.isBuffer(response.body)
                 ? response.body.length
                 : Buffer.byteLength(response.body, 'utf8');
+            // Enforce response size limits
+            if (responseSize > this.config.maxResponseSize) {
+                return (0, response_js_1.errorResponse)('Response too large', 413, false, undefined, envelope.id);
+            }
             return response;
         }
         catch (error) {
-            console.error(`[runtime] [${envelope.id}] Error handling request:`, error);
+            this.logger.error(`[runtime] [${envelope.id}] Error handling request:`, { error });
             const err = error instanceof Error ? error : new Error(String(error));
             const errorResp = (0, response_js_1.errorResponse)('Internal server error', 500, false, err, envelope.id);
             responseSize = Buffer.byteLength(errorResp.body.toString(), 'utf8');
             return errorResp;
         }
         finally {
+            // Clear timeout timer
+            if (timeoutHandle) {
+                clearTimeout(timeoutHandle);
+            }
             // Record request end with response size
             this.telemetry.requestEnd(envelope.startTime, responseSize);
         }
@@ -107,7 +123,7 @@ class Runtime {
     /**
      * Internal request handling (after state gating).
      */
-    async handleInternal(envelope) {
+    async handleInternal(envelope, abortSignal) {
         // Classify request
         const classification = (0, classify_js_1.classifyRequest)(envelope);
         // Security: validate path
@@ -119,8 +135,8 @@ class Runtime {
         if (!match) {
             return (0, response_js_1.notFoundResponse)(classification.pathInfo, classification.expects === 'json', envelope.id);
         }
-        // Build context
-        const ctx = (0, context_js_1.createContext)(envelope, classification, match.params);
+        // Build context with abort signal
+        const ctx = (0, context_js_1.createContext)(envelope, classification, match.params, abortSignal);
         // Dispatch through middleware pipeline and handler
         const finalHandler = (context) => this.dispatch(match.handler, context);
         return this.pipeline.handle(ctx, finalHandler);
@@ -135,6 +151,7 @@ class Runtime {
             case 'liveness':
                 return (0, health_js_1.handleLiveness)(this.state);
             case 'readiness':
+                // Note: handleReadiness returns Promise<RuntimeResponse>
                 return (0, health_js_1.handleReadiness)(this.state);
             case 'healthApi':
                 return (0, health_js_1.handleHealthApi)(this.state, this.telemetry);
@@ -155,6 +172,13 @@ class Runtime {
      */
     getTelemetry() {
         return this.telemetry;
+    }
+    /**
+     * Allow callers to extend the middleware pipeline with custom middleware.
+     */
+    extendPipeline(handler) {
+        this.pipeline.use(handler);
+        return this;
     }
 }
 exports.Runtime = Runtime;

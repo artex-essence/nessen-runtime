@@ -68,11 +68,14 @@ function parseAcceptEncoding(acceptEncoding) {
     const encodings = acceptEncoding
         .split(',')
         .map((enc) => {
-        const [encoding, qPart] = enc.trim().split(';');
-        const q = qPart ? parseFloat(qPart.split('=')[1] || '1') : 1;
-        return { encoding: encoding.trim().toLowerCase(), q };
+        const parts = enc.trim().split(';');
+        const encoding = parts.length > 0 ? parts[0]?.trim() : '';
+        const qPart = parts.length > 1 ? parts[1] : undefined;
+        const qValue = qPart ? parseFloat(qPart.split('=')[1] || '1') : 1;
+        const q = Number.isNaN(qValue) ? 0 : Math.max(0, Math.min(1, qValue));
+        return { encoding: encoding.toLowerCase(), q };
     })
-        .filter((enc) => enc.q > 0)
+        .filter((enc) => enc.encoding && enc.q > 0 && enc.q <= 1)
         .sort((a, b) => b.q - a.q)
         .map((enc) => enc.encoding);
     return encodings.length > 0 ? encodings : ['identity'];
@@ -176,9 +179,23 @@ function createCompressionMiddleware(config = {}) {
                 compressedBody = await new Promise((resolve, reject) => {
                     const compressor = (0, zlib_1.createGzip)({ level });
                     const chunks = [];
-                    compressor.on('data', (chunk) => chunks.push(chunk));
-                    compressor.on('end', () => resolve(Buffer.concat(chunks)));
-                    compressor.on('error', reject);
+                    const onData = (chunk) => chunks.push(chunk);
+                    const onEnd = () => {
+                        cleanup();
+                        resolve(Buffer.concat(chunks));
+                    };
+                    const onError = (err) => {
+                        cleanup();
+                        reject(err);
+                    };
+                    const cleanup = () => {
+                        compressor.removeListener('data', onData);
+                        compressor.removeListener('end', onEnd);
+                        compressor.removeListener('error', onError);
+                    };
+                    compressor.on('data', onData);
+                    compressor.on('end', onEnd);
+                    compressor.on('error', onError);
                     compressor.end(buffer);
                 });
             }
@@ -186,9 +203,23 @@ function createCompressionMiddleware(config = {}) {
                 compressedBody = await new Promise((resolve, reject) => {
                     const compressor = (0, zlib_1.createBrotliCompress)({ params: { [0]: level } });
                     const chunks = [];
-                    compressor.on('data', (chunk) => chunks.push(chunk));
-                    compressor.on('end', () => resolve(Buffer.concat(chunks)));
-                    compressor.on('error', reject);
+                    const onData = (chunk) => chunks.push(chunk);
+                    const onEnd = () => {
+                        cleanup();
+                        resolve(Buffer.concat(chunks));
+                    };
+                    const onError = (err) => {
+                        cleanup();
+                        reject(err);
+                    };
+                    const cleanup = () => {
+                        compressor.removeListener('data', onData);
+                        compressor.removeListener('end', onEnd);
+                        compressor.removeListener('error', onError);
+                    };
+                    compressor.on('data', onData);
+                    compressor.on('end', onEnd);
+                    compressor.on('error', onError);
                     compressor.end(buffer);
                 });
             }

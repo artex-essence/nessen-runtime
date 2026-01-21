@@ -11,6 +11,9 @@
 import type { RequestEnvelope, RuntimeResponse } from './envelope.js';
 import { StateManager } from './state.js';
 import { Telemetry } from './telemetry.js';
+import { type MiddlewareHandler } from './middleware.js';
+import { type RuntimeConfig } from './config.js';
+import type { Logger } from './logger.js';
 /**
  * Core runtime engine. Single instance created by server.ts.
  */
@@ -19,7 +22,9 @@ export declare class Runtime {
     private readonly telemetry;
     private readonly router;
     private readonly pipeline;
-    constructor();
+    private readonly config;
+    private readonly logger;
+    constructor(config?: RuntimeConfig, logger?: Logger);
     /**
      * Setup routes during initialization.
      */
@@ -44,6 +49,10 @@ export declare class Runtime {
      * Get telemetry (for monitoring).
      */
     getTelemetry(): Telemetry;
+    /**
+     * Allow callers to extend the middleware pipeline with custom middleware.
+     */
+    extendPipeline(handler: MiddlewareHandler): this;
 }
 export type { RequestContext } from './context.js';
 //# sourceMappingURL=runtime.d.ts.map

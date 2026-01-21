@@ -64,17 +64,45 @@ export function generateRequestId(): string {
 }
 
 /**
+ * Validate request ID format.
+ * Accepts: UUID format or hex format (with optional req- prefix)
+ * 
+ * @param id - Request ID to validate
+ * @returns true if valid format
+ */
+export function isValidRequestId(id: string): boolean {
+  if (!id || typeof id !== 'string') {
+    return false;
+  }
+
+  // UUID format: 8-4-4-4-12 hex digits
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (uuidPattern.test(id)) {
+    return true;
+  }
+
+  // Hex format: req-{hex}-{timestamp} or just hex string
+  const hexPattern = /^(req-)?[0-9a-f]+(-\d+)?$/i;
+  return hexPattern.test(id);
+}
+
+/**
  * Create request envelope from minimal input.
  * Does not include body; body is added separately after streaming/parsing.
+ * Validates and regenerates request ID if invalid format.
  */
 export function createEnvelope(
   method: string,
   url: string,
   headers: IncomingHttpHeaders,
-  remoteAddress: string | undefined
+  remoteAddress: string | undefined,
+  requestId?: string
 ): RequestEnvelope {
+  // Validate request ID format, regenerate if invalid
+  const validId = requestId && isValidRequestId(requestId) ? requestId : generateRequestId();
+  
   return {
-    id: generateRequestId(),
+    id: validId,
     method: method.toUpperCase(),
     url,
     headers: Object.freeze({ ...headers }),

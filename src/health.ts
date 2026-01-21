@@ -18,6 +18,14 @@ import { jsonResponse, textResponse } from './response.js';
 import type { RuntimeResponse } from './envelope.js';
 
 /**
+ * Readiness check function type.
+ * 
+ * Returns true if dependency is healthy, false otherwise.
+ * Use for checking database connections, external APIs, etc.
+ */
+export type ReadinessCheck = () => boolean | Promise<boolean>;
+
+/**
  * Handles GET /health (liveness probe).
  *
  * Returns 200 OK if the process is alive and running.
@@ -41,14 +49,36 @@ export function handleLiveness(state: StateManager): RuntimeResponse {
  * Used by orchestration platforms to determine if the instance should
  * receive traffic. Returns 503 if draining, degraded, or not yet started.
  *
+ * Optionally runs custom readiness checks (e.g., database connections).
+ * If any check fails, returns 503 with failure details.
+ *
  * @param state - Runtime state manager
+ * @param checks - Optional array of custom readiness checks
  * @returns 200 if ready, 503 if not ready (includes reason)
  */
-export function handleReadiness(state: StateManager): RuntimeResponse {
-  if (state.isReady()) {
-    return textResponse('Ready', 200);
+export async function handleReadiness(
+  state: StateManager,
+  checks: ReadinessCheck[] = []
+): Promise<RuntimeResponse> {
+  // Check runtime state first
+  if (!state.isReady()) {
+    return textResponse(`Not ready: ${state.current}`, 503);
   }
-  return textResponse(`Not ready: ${state.current}`, 503);
+
+  // Run custom readiness checks
+  try {
+    for (let i = 0; i < checks.length; i++) {
+      const result = await checks[i]();
+      if (!result) {
+        return textResponse(`Readiness check ${i + 1} failed`, 503);
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return textResponse(`Readiness check error: ${message}`, 503);
+  }
+
+  return textResponse('Ready', 200);
 }
 
 /**

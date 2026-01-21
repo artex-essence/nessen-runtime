@@ -55,10 +55,19 @@ export interface RuntimeResponse {
  */
 export declare function generateRequestId(): string;
 /**
+ * Validate request ID format.
+ * Accepts: UUID format or hex format (with optional req- prefix)
+ *
+ * @param id - Request ID to validate
+ * @returns true if valid format
+ */
+export declare function isValidRequestId(id: string): boolean;
+/**
  * Create request envelope from minimal input.
  * Does not include body; body is added separately after streaming/parsing.
+ * Validates and regenerates request ID if invalid format.
  */
-export declare function createEnvelope(method: string, url: string, headers: IncomingHttpHeaders, remoteAddress: string | undefined): RequestEnvelope;
+export declare function createEnvelope(method: string, url: string, headers: IncomingHttpHeaders, remoteAddress: string | undefined, requestId?: string): RequestEnvelope;
 /**
  * Add body to envelope (returns new envelope).
  */

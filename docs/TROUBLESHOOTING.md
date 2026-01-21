@@ -67,7 +67,7 @@ Make sure `package.json` includes it:
 ```json
 {
   "dependencies": {
-    "nessen-runtime": "^1.0.0"
+    "nessen-runtime": "^1.1.0"
   }
 }
 ```

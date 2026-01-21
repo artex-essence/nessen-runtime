@@ -15,6 +15,7 @@
  */
 
 import type { MiddlewareHandler } from '../middleware.js';
+import type { Logger } from '../logger.js';
 
 /**
  * Log levels for filtering.
@@ -49,6 +50,7 @@ export interface LoggingConfig {
   minLevel?: LogLevel;
   includeHeaders?: boolean;
   includeBody?: boolean;
+  logger?: Logger;
 }
 
 /**
@@ -67,12 +69,13 @@ export interface LoggingConfig {
  * const logging = createLoggingMiddleware({ minLevel: LogLevel.INFO });
  * pipeline.use(logging);
  */
-export function createLoggingMiddleware(_config: LoggingConfig = {}): MiddlewareHandler {
+export function createLoggingMiddleware(config: LoggingConfig = {}): MiddlewareHandler {
+  const logger = config.logger ?? console;
   return async (ctx, next) => {
     const startTime = Date.now();
 
     // Log request arrival
-    logEntry({
+    logEntry(logger, {
       timestamp: startTime,
       level: 'INFO',
       requestId: ctx.id,
@@ -91,7 +94,7 @@ export function createLoggingMiddleware(_config: LoggingConfig = {}): Middleware
         ? response.body.length
         : Buffer.byteLength(response.body, 'utf8');
 
-      logEntry({
+      logEntry(logger, {
         timestamp: Date.now(),
         level: 'INFO',
         requestId: ctx.id,
@@ -107,7 +110,7 @@ export function createLoggingMiddleware(_config: LoggingConfig = {}): Middleware
     } catch (error) {
       // Log error
       const durationMs = Date.now() - startTime;
-      logEntry({
+      logEntry(logger, {
         timestamp: Date.now(),
         level: 'ERROR',
         requestId: ctx.id,
@@ -130,6 +133,6 @@ export function createLoggingMiddleware(_config: LoggingConfig = {}): Middleware
  *
  * @param entry - Log entry to write
  */
-function logEntry(entry: LogEntry): void {
-  console.log(JSON.stringify(entry));
+function logEntry(logger: Logger, entry: LogEntry): void {
+  logger.info(JSON.stringify(entry));
 }

@@ -9,18 +9,52 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['20.x', '22.x']
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Test
+      - name: Security audit
+        run: npm run audit
+
+      - name: Run tests
         run: npm test
+
+      - name: Generate checksums
+        if: matrix.node-version == '20.x'
+        run: |
+          cd dist
+          sha256sum *.js *.d.ts > checksums.txt
+          cat checksums.txt
+
+      - name: Upload build artifacts
+        if: matrix.node-version == '20.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nessen-runtime-dist
+          path: |
+            dist/**/*
+            package.json
+            README.md
+            LICENSE
+          retention-days: 30
+
+      - name: Upload checksums
+        if: matrix.node-version == '20.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          path: dist/checksums.txt
+          retention-days: 30

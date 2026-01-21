@@ -14,7 +14,7 @@
  * @module middleware/rateLimit
  */
 
-import type { MiddlewareContext, MiddlewareHandler } from '../middleware.js';
+import type { MiddlewareHandler } from '../middleware.js';
 import { textResponse } from '../response.js';
 
 /**
@@ -38,8 +38,8 @@ export interface RateLimitConfig {
   /** Time window in milliseconds (default: 60000 = 1 minute) */
   windowMs?: number;
 
-  /** Function to extract rate limit key from context (default: client IP) */
-  keyGenerator?: (ctx: MiddlewareContext) => string;
+  /** Function to extract rate limit key from headers (default: client IP) */
+  keyGenerator?: (headers: Record<string, string | string[] | undefined>, remoteAddress: string | undefined) => string;
 
   /** Maximum keys to track in memory (default: 10000) */
   maxKeys?: number;
@@ -67,7 +67,7 @@ export interface RateLimitConfig {
 export function createRateLimitMiddleware(config: RateLimitConfig = {}): MiddlewareHandler {
   const maxRequests = config.maxRequests ?? 100;
   const windowMs = config.windowMs ?? 60000;
-  const keyGenerator = config.keyGenerator ?? ((ctx) => ctx.remoteAddress ?? 'unknown');
+  const keyGenerator = config.keyGenerator ?? ((_headers, remoteAddress) => remoteAddress ?? 'unknown');
   const maxKeys = config.maxKeys ?? 10000;
   const cleanupIntervalMs = config.cleanupIntervalMs ?? 60000;
 
@@ -82,7 +82,7 @@ export function createRateLimitMiddleware(config: RateLimitConfig = {}): Middlew
   cleanupInterval.unref();
 
   return async (ctx, next) => {
-    const key = keyGenerator(ctx);
+    const key = keyGenerator(ctx.headers, ctx.remoteAddress);
 
     // Check rate limit
     if (!allowRequest(key, maxRequests, windowMs, buckets, maxKeys)) {
@@ -142,7 +142,7 @@ function allowRequest(
 
   // Refill tokens based on elapsed time
   const elapsed = now - bucket.lastRefillTime;
-  const refill = (elapsed / windowMs) * maxRequests;
+  const refill = windowMs > 0 ? (elapsed / windowMs) * maxRequests : 0;
 
   bucket.tokens = Math.min(maxRequests, bucket.tokens + refill);
   bucket.lastRefillTime = now;

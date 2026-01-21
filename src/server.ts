@@ -11,15 +11,14 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'http';
 import { Runtime } from './runtime.js';
 import { createEnvelope, withBody, type RequestEnvelope, type RuntimeResponse } from './envelope.js';
+import { createConfig, validateConfig, type RuntimeConfig } from './config.js';
 import { setupSignalHandlers } from './shutdown.js';
 import { isValidContentType } from './utils.js';
+import { createDefaultLogger } from './logger.js';
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
-const HOST = process.env.HOST || '0.0.0.0';
-const MAX_BODY_SIZE = parseInt(process.env.MAX_BODY_SIZE || '1048576', 10); // 1MB default
-const MAX_URL_LENGTH = 8192; // 8KB URL limit
-const REQUEST_TIMEOUT_MS = 30000; // 30 seconds per-request timeout
-const IDLE_TIMEOUT_MS = 60000; // 60 seconds idle timeout
+const CONFIG: RuntimeConfig = createConfig();
+validateConfig(CONFIG);
+const LOGGER = createDefaultLogger();
 
 /**
  * Starts the HTTP server and wires up all listeners.
@@ -31,7 +30,7 @@ const IDLE_TIMEOUT_MS = 60000; // 60 seconds idle timeout
  * @returns The Node.js HTTP Server instance (useful for testing/shutdown)
  */
 export function startServer(): Server {
-  const runtime = new Runtime();
+  const runtime = new Runtime(CONFIG, LOGGER);
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     let requestId = 'unknown';
@@ -48,40 +47,40 @@ export function startServer(): Server {
   });
 
   // Configure socket timeouts for connection management
-  server.timeout = IDLE_TIMEOUT_MS;
-  server.keepAliveTimeout = IDLE_TIMEOUT_MS;
-  server.headersTimeout = 10000; // 10 seconds for headers
+  server.timeout = CONFIG.idleTimeoutMs;
+  server.keepAliveTimeout = CONFIG.idleTimeoutMs;
+  server.headersTimeout = CONFIG.headersTimeoutMs;
 
   // Error handler for server-level errors (e.g., EADDRINUSE)
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
-      console.error(`[server] ERROR: Port ${PORT} is already in use`);
+      console.error(`[server] ERROR: Port ${CONFIG.port} is already in use`);
       console.error('[server] Ensure no other process is running on this port');
       process.exit(1);
     } else if (err.code === 'EACCES') {
-      console.error(`[server] ERROR: Permission denied to bind port ${PORT}`);
-      console.error('[server] Ports below 1024 require elevated privileges');
+      LOGGER.error(`Permission denied to bind port ${CONFIG.port}`);
+      LOGGER.error('Ports below 1024 require elevated privileges');
       process.exit(1);
     } else {
-      console.error('[server] Fatal server error:', err);
+      LOGGER.error('Fatal server error:', { error: err });
       process.exit(1);
     }
   });
 
   // Setup graceful shutdown handlers for SIGTERM/SIGINT
-  setupSignalHandlers(server, runtime.getState(), runtime.getTelemetry(), (result, exitCode) => {
+  setupSignalHandlers(server, runtime.getState(), runtime.getTelemetry(), LOGGER, (result, exitCode) => {
     if (!result.drained) {
-      console.warn(`[server] Forced shutdown with ${result.activeRequests} active requests`);
+      LOGGER.warn(`Forced shutdown with ${result.activeRequests} active requests`);
     }
     process.exit(exitCode);
-  });
+  }, { shutdownTimeoutMs: CONFIG.shutdownTimeoutMs });
 
   // Start listening
-  server.listen(PORT, HOST, () => {
-    console.log(`[server] Listening on http://${HOST}:${PORT}`);
+  server.listen(CONFIG.port, CONFIG.host, () => {
+    console.log(`[server] Listening on http://${CONFIG.host}:${CONFIG.port}`);
     console.log(`[server] Base path: ${process.env.BASE_PATH || '/'}`);
-    console.log(`[server] Max body size: ${MAX_BODY_SIZE} bytes`);
-    console.log(`[server] Request timeout: ${REQUEST_TIMEOUT_MS}ms`);
+    console.log(`[server] Max body size: ${CONFIG.maxBodySize} bytes`);
+    console.log(`[server] Request timeout: ${CONFIG.requestTimeoutMs}ms`);
   });
 
   return server;
@@ -106,18 +105,44 @@ async function handleRequest(
 ): Promise<string> {
   // Security: check URL length to prevent DoS
   const url = req.url || '/';
-  if (url.length > MAX_URL_LENGTH) {
+  if (Buffer.byteLength(url, 'utf8') > CONFIG.maxUrlLength) {
     res.writeHead(414, { 'Content-Type': 'text/plain' });
     res.end('URI Too Long');
     return 'url-too-long';
   }
 
+  // Header size guardrail
+  const headerBytes = Object.entries(req.headers).reduce((total, [key, value]) => {
+    const val = Array.isArray(value) ? value.join(',') : value ?? '';
+    return total + Buffer.byteLength(key, 'utf8') + Buffer.byteLength(String(val), 'utf8');
+  }, 0);
+
+  if (headerBytes > CONFIG.maxHeaderSize) {
+    res.writeHead(431, { 'Content-Type': 'text/plain' });
+    res.end('Request Header Fields Too Large');
+    return 'headers-too-large';
+  }
+
+  // Header count guardrail
+  const headerCount = Object.keys(req.headers).length;
+  if (headerCount > CONFIG.maxHeaderCount) {
+    res.writeHead(431, { 'Content-Type': 'text/plain' });
+    res.end('Too Many Headers');
+    return 'too-many-headers';
+  }
+
   // Create envelope from HTTP metadata
   const method = req.method || 'GET';
   const headers = req.headers;
-  const remoteAddress = req.socket.remoteAddress;
 
-  let envelope: RequestEnvelope = createEnvelope(method, url, headers, remoteAddress);
+  // Normalize client IP respecting proxy configuration
+  const clientIp = extractClientIp(headers, req.socket.remoteAddress, CONFIG.trustProxy);
+
+  // Request ID: prefer incoming header, optionally generate
+  const headerRequestId = headers[CONFIG.requestIdHeader.toLowerCase()] as string | undefined;
+  const requestId = normalizeRequestId(headerRequestId, CONFIG.generateRequestId);
+
+  let envelope: RequestEnvelope = createEnvelope(method, url, headers, clientIp, requestId);
 
   // Parse body if method typically has one
   if (shouldParseBody(method)) {
@@ -130,7 +155,7 @@ async function handleRequest(
     }
 
     try {
-      const body = await readBody(req, MAX_BODY_SIZE);
+      const body = await readBody(req, CONFIG.maxBodySize);
       envelope = withBody(envelope, body);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -144,11 +169,52 @@ async function handleRequest(
   const response: RuntimeResponse = await runtime.handle(envelope);
 
   // Send response back to client
+  if (!response.headers[CONFIG.requestIdHeader]) {
+    response.headers[CONFIG.requestIdHeader] = envelope.id;
+  }
   sendResponse(res, response);
   
   return envelope.id;
 }
 
+
+  /**
+   * Extract client IP with proxy awareness.
+   */
+  function extractClientIp(
+    headers: IncomingMessage['headers'],
+    remoteAddress: string | undefined,
+    trustProxy: boolean
+  ): string | undefined {
+    if (!trustProxy) {
+      return remoteAddress;
+    }
+
+    const forwarded = headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.length > 0) {
+      const parts = forwarded.split(',');
+      const first = parts.length > 0 ? parts[0]?.trim() : undefined;
+      if (first && isValidIp(first)) {
+        return first;
+      }
+    }
+
+    return remoteAddress;
+  }
+
+  function isValidIp(value: string): boolean {
+    return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value) || /^[a-fA-F0-9:]+$/.test(value);
+  }
+
+  /**
+   * Normalize incoming request ID header or generate a new one.
+   */
+  function normalizeRequestId(headerValue: string | undefined, generate: boolean): string | undefined {
+    if (headerValue && headerValue.length <= 200) {
+      return headerValue;
+    }
+    return generate ? undefined : undefined;
+  }
 /**
  * Checks if request method typically includes a body.
  * Used to determine whether to parse request body.

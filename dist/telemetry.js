@@ -14,9 +14,24 @@
  * @module telemetry
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Telemetry = void 0;
+exports.Telemetry = exports.NoOpTelemetrySink = void 0;
 const perf_hooks_1 = require("perf_hooks");
 const process_1 = require("process");
+/**
+ * No-op telemetry sink (default).
+ */
+class NoOpTelemetrySink {
+    incrementCounter() {
+        // no-op
+    }
+    recordTiming() {
+        // no-op
+    }
+    recordGauge() {
+        // no-op
+    }
+}
+exports.NoOpTelemetrySink = NoOpTelemetrySink;
 /**
  * Telemetry collector providing metrics snapshots for monitoring.
  *
@@ -49,8 +64,10 @@ class Telemetry {
     cachedSnapshot = null;
     lastSnapshotTime = 0;
     snapshotCacheTtlMs = 100; // Cache snapshots for 100ms
-    constructor() {
+    sink;
+    constructor(sink = new NoOpTelemetrySink()) {
         this.snapshot = this.buildSnapshot();
+        this.sink = sink;
         this.startEventLoopMonitoring();
     }
     /**
@@ -60,6 +77,8 @@ class Telemetry {
     requestStart() {
         this.requestsTotal++;
         this.requestsActive++;
+        this.sink.incrementCounter('requests.total', 1);
+        this.sink.recordGauge('requests.active', this.requestsActive);
     }
     /**
      * Records the end of a request with timing and response size.
@@ -74,6 +93,10 @@ class Telemetry {
         this.requestsActive = Math.max(0, this.requestsActive - 1);
         const durationMs = Date.now() - startTime;
         this.recentTimings.push({ durationMs, responseBytes });
+        // Emit metrics
+        this.sink.recordTiming('request.duration', durationMs);
+        this.sink.recordGauge('requests.active', this.requestsActive);
+        this.sink.recordGauge('response.size', responseBytes);
         // Enforce bounded history (prevent unbounded growth)
         if (this.recentTimings.length > this.maxTimings) {
             this.recentTimings.shift();

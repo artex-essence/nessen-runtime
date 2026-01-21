@@ -317,6 +317,6 @@ If you find documentation gaps or errors:
 
 ## Version Information
 
-Documentation is for Nessen Runtime **1.0.0+**
+Documentation is for Nessen Runtime **1.1.0+**
 
 Requires: Node.js 20 or later

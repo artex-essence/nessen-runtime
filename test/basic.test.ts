@@ -33,7 +33,7 @@ export function testTypeScriptCompliance(): void {
 export function testZeroDependencies(): void {
   console.log('[test] Zero dependencies check...');
   // Parse package.json to verify no runtime deps
-  const pkg = require('../package.json') as Record<string, unknown>;
+  const pkg = require('../../package.json') as Record<string, unknown>;
   const deps = pkg.dependencies as Record<string, unknown> | undefined;
   assert(!deps || Object.keys(deps).length === 0, 'Should have zero runtime dependencies');
   console.log('[test] ✓ Zero dependencies verified');
