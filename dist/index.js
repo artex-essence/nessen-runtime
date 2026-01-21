@@ -4,7 +4,7 @@
  * Re-exports all public APIs for consumers
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Telemetry = exports.setupSignalHandlers = exports.Router = exports.createCompressionMiddleware = exports.createRateLimitMiddleware = exports.createLoggingMiddleware = exports.ConsoleLogger = exports.StructuredLogger = exports.createDefaultLogger = exports.createConfig = exports.Runtime = void 0;
+exports.Telemetry = exports.setupSignalHandlers = exports.Router = exports.createCompressionMiddleware = exports.createRateLimitMiddleware = exports.createLoggingMiddleware = exports.SilentLogger = exports.ConsoleLogger = exports.StructuredLogger = exports.createDefaultLogger = exports.createConfig = exports.Runtime = void 0;
 // Main class
 var runtime_js_1 = require("./runtime.js");
 Object.defineProperty(exports, "Runtime", { enumerable: true, get: function () { return runtime_js_1.Runtime; } });
@@ -16,6 +16,7 @@ var logger_js_1 = require("./logger.js");
 Object.defineProperty(exports, "createDefaultLogger", { enumerable: true, get: function () { return logger_js_1.createDefaultLogger; } });
 Object.defineProperty(exports, "StructuredLogger", { enumerable: true, get: function () { return logger_js_1.StructuredLogger; } });
 Object.defineProperty(exports, "ConsoleLogger", { enumerable: true, get: function () { return logger_js_1.ConsoleLogger; } });
+Object.defineProperty(exports, "SilentLogger", { enumerable: true, get: function () { return logger_js_1.SilentLogger; } });
 // Middleware
 var logging_js_1 = require("./middleware/logging.js");
 Object.defineProperty(exports, "createLoggingMiddleware", { enumerable: true, get: function () { return logging_js_1.createLoggingMiddleware; } });

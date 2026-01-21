@@ -88,7 +88,13 @@ export async function runAllTests(): Promise<void> {
   }
 }
 
+// Export as default promise for test runner
+export default runAllTests();
+
 // Run tests if executed directly
 if (require.main === module) {
-  void runAllTests();
+  runAllTests().catch(err => {
+    console.error(err);
+    process.exit(1);
+  });
 }

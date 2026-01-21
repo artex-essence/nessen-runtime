@@ -42,6 +42,15 @@ export declare class ConsoleLogger implements Logger {
     error(message: string, meta?: Record<string, unknown>): void;
 }
 /**
+ * Silent logger (no-op, for tests and minimal environments).
+ */
+export declare class SilentLogger implements Logger {
+    debug(): void;
+    info(): void;
+    warn(): void;
+    error(): void;
+}
+/**
  * Creates default logger based on environment.
  */
 export declare function createDefaultLogger(): Logger;

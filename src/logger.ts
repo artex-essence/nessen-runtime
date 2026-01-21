@@ -101,6 +101,27 @@ export class ConsoleLogger implements Logger {
 }
 
 /**
+ * Silent logger (no-op, for tests and minimal environments).
+ */
+export class SilentLogger implements Logger {
+  debug(): void {
+    // no-op
+  }
+
+  info(): void {
+    // no-op
+  }
+
+  warn(): void {
+    // no-op
+  }
+
+  error(): void {
+    // no-op
+  }
+}
+
+/**
  * Creates default logger based on environment.
  */
 export function createDefaultLogger(): Logger {

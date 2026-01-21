@@ -5,7 +5,7 @@
 export { Runtime } from './runtime.js';
 export { createConfig } from './config.js';
 export type { RuntimeConfig } from './config.js';
-export { createDefaultLogger, StructuredLogger, ConsoleLogger } from './logger.js';
+export { createDefaultLogger, StructuredLogger, ConsoleLogger, SilentLogger } from './logger.js';
 export type { Logger } from './logger.js';
 export { createLoggingMiddleware } from './middleware/logging.js';
 export { createRateLimitMiddleware } from './middleware/rateLimit.js';

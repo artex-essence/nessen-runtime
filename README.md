@@ -1,13 +1,19 @@
-# Nessen Runtime
+<h1 id="top" align="center">
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/artex-agency/.github/refs/heads/main/profile/media/artex-agency-logo-dark.png">
+        <img width="54" alt="Artex Agency Logo" src="https://raw.githubusercontent.com/artex-agency/.github/refs/heads/main/profile/media/artex-agency-logo.png">
+    </picture>    
+    <br>
+   nessen runtime
+</h1>
 
-[![Node.js 20+](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
-[![npm version](https://img.shields.io/npm/v/nessen-runtime.svg)](https://www.npmjs.com/package/nessen-runtime)
-[![Tests](https://img.shields.io/badge/Tests-8%2F8%20Passing-brightgreen)](./test/)
-
-Enterprise-grade HTTP runtime for Node.js. Zero dependencies, TypeScript, production-ready.
-
-## Overview
+<div align="center">
+   <a href="https://nodejs.org/"><img alt="Node.js 20+" src="https://img.shields.io/badge/Node.js-20+-green.svg"></a>
+   <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-blue.svg"></a>
+   <a href="./test/"><img alt="Tests" src="https://img.shields.io/badge/Tests-8%2F8%20Passing-brightgreen"></a>
+   <a href="https://www.npmjs.com/package/nessen-runtime"><img alt="npm version" src="https://img.shields.io/npm/v/nessen-runtime.svg"></a>
+</div>
+<br>
 
 Nessen is a lightweight, high-performance HTTP runtime optimized for building scalable microservices, APIs, and full-stack applications. Designed with security and performance as primary concerns, it aims to provide a solid foundation without unnecessary overhead.
 

@@ -11,7 +11,7 @@ export { createConfig } from './config.js';
 export type { RuntimeConfig } from './config.js';
 
 // Logging
-export { createDefaultLogger, StructuredLogger, ConsoleLogger } from './logger.js';
+export { createDefaultLogger, StructuredLogger, ConsoleLogger, SilentLogger } from './logger.js';
 export type { Logger } from './logger.js';
 
 // Middleware

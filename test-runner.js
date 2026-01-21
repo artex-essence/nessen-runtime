@@ -36,7 +36,30 @@ async function runTests() {
   for (const file of files) {
     const testPath = path.join(testDir, file);
     try {
-      require(testPath);
+      const mod = require(testPath);
+      
+      // Support both export patterns:
+      // 1. export default Promise (recommended)
+      // 2. export function run() 
+      let testPromise = null;
+      
+      if (mod && mod.default && typeof mod.default.then === 'function') {
+        // Await exported promise
+        testPromise = mod.default;
+      } else if (typeof mod.run === 'function') {
+        // Call exported run function
+        testPromise = Promise.resolve(mod.run());
+      } else if (typeof mod === 'function') {
+        // Call module as function
+        testPromise = Promise.resolve(mod());
+      }
+      
+      if (!testPromise || typeof testPromise.then !== 'function') {
+        throw new Error(`${file} must export default Promise, export run() function, or export a function`);
+      }
+      
+      // Await the test promise
+      await testPromise;
       passed++;
     } catch (err) {
       failed++;

@@ -8,7 +8,7 @@
  * @module logger
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ConsoleLogger = exports.StructuredLogger = void 0;
+exports.SilentLogger = exports.ConsoleLogger = exports.StructuredLogger = void 0;
 exports.createDefaultLogger = createDefaultLogger;
 /**
  * Creates a production logger that outputs structured JSON.
@@ -75,6 +75,24 @@ class ConsoleLogger {
     }
 }
 exports.ConsoleLogger = ConsoleLogger;
+/**
+ * Silent logger (no-op, for tests and minimal environments).
+ */
+class SilentLogger {
+    debug() {
+        // no-op
+    }
+    info() {
+        // no-op
+    }
+    warn() {
+        // no-op
+    }
+    error() {
+        // no-op
+    }
+}
+exports.SilentLogger = SilentLogger;
 /**
  * Creates default logger based on environment.
  */

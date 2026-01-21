@@ -66,4 +66,13 @@ function makeRequest(headers: http.OutgoingHttpHeaders): Promise<{ status: numbe
   console.log('\n[TEST] headers.limit.test.ts passed ✓\n');
 }
 
-void main();
+// Export as default promise for test runner
+export default main();
+
+// Also allow direct execution
+if (require.main === module) {
+  main().catch(err => {
+    console.error(err);
+    process.exit(1);
+  });
+}
