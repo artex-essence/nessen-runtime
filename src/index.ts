@@ -25,6 +25,7 @@ export type {
   RuntimeResponse,
   RequestEnvelope
 } from './envelope.js';
+export type { ErrorEnvelope } from './response.js';
 
 export type { MiddlewareHandler, RequestHandler } from './middleware.js';
 

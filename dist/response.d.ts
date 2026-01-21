@@ -73,6 +73,15 @@ export declare function textResponse(body: string, statusCode?: number, extraHea
  * @param requestId - Request ID to add to X-Request-ID header
  * @returns RuntimeResponse ready for transmission
  */
+/**
+ * Standard error envelope structure for consistent error handling.
+ */
+export interface ErrorEnvelope {
+    code: string;
+    message: string;
+    requestId?: string;
+    details?: unknown;
+}
 export declare function errorResponse(message: string, statusCode?: number, expectsJson?: boolean, error?: Error, requestId?: string): RuntimeResponse;
 /**
  * Builds 503 Service Unavailable response (for graceful shutdown/draining).

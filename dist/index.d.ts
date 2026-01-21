@@ -12,6 +12,7 @@ export { createRateLimitMiddleware } from './middleware/rateLimit.js';
 export { createCompressionMiddleware } from './middleware/compression.js';
 export type { RequestContext } from './context.js';
 export type { RuntimeResponse, RequestEnvelope } from './envelope.js';
+export type { ErrorEnvelope } from './response.js';
 export type { MiddlewareHandler, RequestHandler } from './middleware.js';
 export { Router } from './router.js';
 export { setupSignalHandlers } from './shutdown.js';

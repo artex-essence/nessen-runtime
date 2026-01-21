@@ -9,7 +9,7 @@ Enterprise-grade HTTP runtime for Node.js. Zero dependencies, TypeScript, produc
 
 ## Overview
 
-Nessen is a lightweight, high-performance HTTP runtime designed for building scalable microservices, APIs, and full-stack applications. Built with security and performance in mind, it provides a solid foundation without unnecessary overhead.
+Nessen is a lightweight, high-performance HTTP runtime optimized for building scalable microservices, APIs, and full-stack applications. Designed with security and performance as primary concerns, it aims to provide a solid foundation without unnecessary overhead.
 
 **Key Stats:**
 - **45,000+ req/sec** throughput (baseline), **38,000+ req/sec** with full middleware
@@ -30,11 +30,11 @@ Nessen is a lightweight, high-performance HTTP runtime designed for building sca
 - **Zero Vulnerabilities** - Comprehensive security audit with zero issues found
 
 ### Performance
-- **45,000+ req/sec** - Verified throughput with minimal latency
-- **Memory Stable** - No leaks under sustained production load
-- **Low Overhead** - ~50MB footprint, efficient resource usage
+- **45,000+ req/sec** - Measured baseline throughput with minimal latency
+- **Memory Stable** - Designed to prevent leaks under sustained production load
+- **Low Overhead** - ~50MB footprint, optimized for efficient resource usage
 - **Optimized Routing** - O(1) for static routes; O(k) for dynamic routes where k ≈ segments
-- **Response Compression** - Gzip and Brotli support (65-80% reduction)
+- **Response Compression** - Gzip and Brotli support (typically 65-80% reduction)
 
 ### Production Ready
 - **100% Test Coverage** - 8/8 test suites passing

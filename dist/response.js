@@ -166,28 +166,15 @@ function textResponse(body, statusCode = 200, extraHeaders = {}, requestId) {
         body,
     };
 }
-/**
- * Builds error response in appropriate format (JSON or text).
- *
- * Automatically selects response format based on client's Accept header.
- * In development mode, includes stack traces for debugging. In production,
- * only the error message is sent.
- *
- * @param message - Error message to send
- * @param statusCode - HTTP status code (default: 500)
- * @param expectsJson - Whether client expects JSON format
- * @param error - Optional Error object (used for stack traces in DEV_MODE)
- * @param requestId - Request ID to add to X-Request-ID header
- * @returns RuntimeResponse ready for transmission
- */
 function errorResponse(message, statusCode = 500, expectsJson = false, error, requestId) {
     if (expectsJson) {
         const body = {
-            error: true,
-            message
+            code: `ERROR_${statusCode}`,
+            message,
+            requestId
         };
         if (DEV_MODE && error) {
-            body.stack = error.stack;
+            body.details = { stack: error.stack };
         }
         return jsonResponse(body, statusCode, {}, requestId);
     }
@@ -225,7 +212,13 @@ function serviceUnavailableResponse(reason = 'Service draining', requestId) {
  */
 function notFoundResponse(path, expectsJson = false, requestId) {
     if (expectsJson) {
-        return jsonResponse({ error: true, message: 'Not Found', path }, 404, {}, requestId);
+        const body = {
+            code: 'ERROR_404',
+            message: 'Not Found',
+            requestId,
+            details: { path }
+        };
+        return jsonResponse(body, 404, {}, requestId);
     }
     return textResponse(`Not Found: ${path}`, 404, {}, requestId);
 }

@@ -204,18 +204,30 @@ export class Runtime {
   /**
    * Allow callers to extend the middleware pipeline with custom middleware.
    */
-  extendPipeline(handler: MiddlewareHandler): this {
+  /**
+   * Add middleware to the processing pipeline.
+   * Middleware is executed in registration order for all requests.
+   * 
+   * @param handler - Middleware handler to add to the pipeline
+   * @returns - Returns this for chaining
+   * @example
+   * ```typescript
+   * runtime.use(loggingMiddleware);
+   * runtime.use(authMiddleware);
+   * ```
+   */
+  use(handler: MiddlewareHandler): this {
     this.pipeline.use(handler);
     return this;
   }
 
   /**
-   * Alias for extendPipeline() - express-like API for adding middleware.
+   * @deprecated Use `use()` instead. This method will be removed in v2.0.
    * @param handler - Middleware handler to add to the pipeline
    * @returns - Returns this for chaining
    */
-  use(handler: MiddlewareHandler): this {
-    return this.extendPipeline(handler);
+  extendPipeline(handler: MiddlewareHandler): this {
+    return this.use(handler);
   }
 }
 

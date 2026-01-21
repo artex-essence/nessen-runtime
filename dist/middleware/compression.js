@@ -17,6 +17,13 @@
  * 2. brotli (better compression, supported in Node.js 10.16+)
  * 3. deflate (legacy support)
  *
+ * Compression is automatically skipped for:
+ * - HEAD requests (no body)
+ * - Responses below threshold size (default: 1024 bytes)
+ * - Already-compressed content (image/*, video/*, application/zip, etc.)
+ * - Responses without Accept-Encoding header (unless forceCompression=true)
+ * - Non-compressible Content-Types (binary data, already compressed formats)
+ *
  * @module middleware/compression
  */
 Object.defineProperty(exports, "__esModule", { value: true });

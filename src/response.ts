@@ -210,6 +210,16 @@ export function textResponse(
  * @param requestId - Request ID to add to X-Request-ID header
  * @returns RuntimeResponse ready for transmission
  */
+/**
+ * Standard error envelope structure for consistent error handling.
+ */
+export interface ErrorEnvelope {
+  code: string;
+  message: string;
+  requestId?: string;
+  details?: unknown;
+}
+
 export function errorResponse(
   message: string,
   statusCode: number = 500,
@@ -218,12 +228,13 @@ export function errorResponse(
   requestId?: string
 ): RuntimeResponse {
   if (expectsJson) {
-    const body: { error: boolean; message: string; stack?: string } = { 
-      error: true, 
-      message 
+    const body: ErrorEnvelope = { 
+      code: `ERROR_${statusCode}`,
+      message,
+      requestId
     };
     if (DEV_MODE && error) {
-      body.stack = error.stack;
+      body.details = { stack: error.stack };
     }
     return jsonResponse(body, statusCode, {}, requestId);
   }
@@ -265,7 +276,13 @@ export function serviceUnavailableResponse(reason: string = 'Service draining', 
  */
 export function notFoundResponse(path: string, expectsJson: boolean = false, requestId?: string): RuntimeResponse {
   if (expectsJson) {
-    return jsonResponse({ error: true, message: 'Not Found', path }, 404, {}, requestId);
+    const body: ErrorEnvelope = {
+      code: 'ERROR_404',
+      message: 'Not Found',
+      requestId,
+      details: { path }
+    };
+    return jsonResponse(body, 404, {}, requestId);
   }
   return textResponse(`Not Found: ${path}`, 404, {}, requestId);
 }

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **API Consistency:** `use()` is now the canonical middleware method. `extendPipeline()` deprecated (will be removed in v2.0).
+- **Error Responses:** Standardized error envelope structure with `ErrorEnvelope` type (`code`, `message`, `requestId`, `details` fields) for consistent downstream tooling.
+- **Documentation:** Compression middleware now documents edge cases (HEAD requests, small responses, already-compressed content).
+- **Tone Calibration:** README claims softened ("designed for", "optimized for", "aims to") to improve GitHub community engagement.
+
+### Deprecated
+- `extendPipeline()` method - Use `use()` instead (Express-like standard). Will be removed in v2.0.
+
 ## [1.1.0] - 2026-01-21
 
 ### Added

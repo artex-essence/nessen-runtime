@@ -30,9 +30,9 @@ Demonstrates creating custom middleware for:
 - IP allowlist filtering
 
 ```typescript
-runtime.extendPipeline(authMiddleware);
-runtime.extendPipeline(requestIdMiddleware);
-runtime.extendPipeline(ipFilterMiddleware(['127.0.0.1']));
+runtime.use(authMiddleware);
+runtime.use(requestIdMiddleware);
+runtime.use(ipFilterMiddleware(['127.0.0.1']));
 ```
 
 ## Running Examples
