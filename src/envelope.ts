@@ -1,15 +1,31 @@
 /**
  * envelope.ts
- * Transport-neutral request envelope. Decouples HTTP from core runtime logic.
- * Contains all necessary request data in a safe, immutable shape.
+ *
+ * Transport-neutral request and response envelope definitions.
+ * Decouples HTTP specifics from core runtime logic by providing a protocol-agnostic
+ * data model. Can be extended for gRPC, QUIC, or other transports without changing
+ * routing, state management, or request handling logic.
+ *
+ * @module envelope
  */
 
 import type { IncomingHttpHeaders } from 'http';
 import { randomBytes } from 'crypto';
 
 /**
- * Transport-neutral request envelope.
- * Created from HTTP but can be used by any transport layer.
+ * Transport-neutral request envelope containing all request data.
+ *
+ * Created by the HTTP ingress layer but used throughout the runtime.
+ * Immutable to prevent accidental mutations during request processing.
+ *
+ * Properties:
+ * - id: Cryptographically secure request identifier for tracing
+ * - method: HTTP method (GET, POST, etc.)
+ * - url: Full request URL including query string
+ * - headers: HTTP headers (lowercase keys per Node.js convention)
+ * - remoteAddress: Client IP address
+ * - startTime: Milliseconds since epoch when request started
+ * - body: Optional request body (Buffer, only for POST/PUT/PATCH)
  */
 export interface RequestEnvelope {
   readonly id: string;
@@ -22,7 +38,15 @@ export interface RequestEnvelope {
 }
 
 /**
- * Transport-neutral response shape.
+ * Transport-neutral response shape for all responses.
+ *
+ * Used by all handlers to return responses. HTTP layer converts this
+ * to actual HTTP response. Can be extended for other transports.
+ *
+ * Properties:
+ * - statusCode: HTTP status code (200, 404, 500, etc.)
+ * - headers: Response headers (will be sent as-is)
+ * - body: Response body (string or Buffer)
  */
 export interface RuntimeResponse {
   readonly statusCode: number;

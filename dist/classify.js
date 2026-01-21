@@ -1,20 +1,62 @@
 "use strict";
 /**
  * classify.ts
- * Request classification: intent, expected response type, base path handling, path info.
- * HTTP-driven but produces transport-neutral metadata.
+ *
+ * Request classification system that determines routing intent and response format.
+ * Analyzes URL, method, and headers to classify requests and produce transport-neutral
+ * metadata. Validates host headers to prevent cache poisoning attacks.
+ *
+ * @module classify
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.classifyRequest = classifyRequest;
-exports.isPathSafe = isPathSafe;
+const utils_js_1 = require("./utils.js");
 const BASE_PATH = process.env.BASE_PATH || '/';
+const VALID_HOSTS = (process.env.VALID_HOSTS || 'localhost').split(',').map(h => h.trim());
 const normalizedBasePath = BASE_PATH.endsWith('/') ? BASE_PATH.slice(0, -1) : BASE_PATH;
 /**
- * Classify request based on URL, method, and headers.
+ * Classifies a request to determine intent, expected response format, and routing.
+ *
+ * Performs the following checks:
+ * 1. Validates Host header against whitelist (prevents cache poisoning)
+ * 2. Validates path for traversal attempts
+ * 3. Analyzes URL and headers to determine intent
+ * 4. Determines expected response format based on path and Accept headers
+ *
+ * Optimized to avoid URL object allocation (fast path for query strings).
+ *
+ * @param envelope - Request envelope with HTTP metadata
+ * @returns Classification metadata for routing and response formatting
+ *
+ * @example
+ * const classified = classifyRequest(envelope);
+ * // { intent: 'api', expects: 'json', pathInfo: '/users', ... }
  */
 function classifyRequest(envelope) {
-    const url = new URL(envelope.url, 'http://localhost');
-    const pathname = url.pathname;
+    // Validate Host header against whitelist
+    const host = envelope.headers['host'];
+    if (host && !(0, utils_js_1.isValidHost)(host, VALID_HOSTS)) {
+        return {
+            intent: 'unknown',
+            expects: 'text',
+            basePath: normalizedBasePath,
+            pathInfo: '/',
+            isAjax: false,
+        };
+    }
+    // Optimize: Extract pathname without creating URL object
+    // Fast path: find first ? or # without full URL parsing
+    const pathname = extractPathname(envelope.url);
+    // Validate path safety
+    if (!(0, utils_js_1.isPathSafe)(pathname)) {
+        return {
+            intent: 'unknown',
+            expects: 'text',
+            basePath: normalizedBasePath,
+            pathInfo: pathname,
+            isAjax: false,
+        };
+    }
     // Check base path
     if (!pathname.startsWith(normalizedBasePath)) {
         return {
@@ -63,7 +105,44 @@ function classifyRequest(envelope) {
     };
 }
 /**
- * Detect AJAX/API requests via headers.
+ * Extracts pathname from URL without creating URL object.
+ *
+ * Fast path for pathname extraction: finds the first ? or # and returns
+ * everything before it. Avoids expensive URL parsing for the common case
+ * where we only care about the path, not query parameters.
+ *
+ * @param url - Full URL with optional query string or fragment
+ * @returns Pathname (path without query or fragment)
+ *
+ * @example
+ * extractPathname('/foo?bar=1')  // '/foo'
+ * extractPathname('/foo#hash')   // '/foo'
+ * extractPathname('/foo')        // '/foo'
+ */
+function extractPathname(url) {
+    const queryIndex = url.indexOf('?');
+    const hashIndex = url.indexOf('#');
+    // Find first occurrence of ? or #
+    let endIndex = url.length;
+    if (queryIndex >= 0)
+        endIndex = Math.min(endIndex, queryIndex);
+    if (hashIndex >= 0)
+        endIndex = Math.min(endIndex, hashIndex);
+    return url.slice(0, endIndex) || '/';
+}
+/**
+ * Detects AJAX and API client requests via HTTP headers.
+ *
+ * Modern clients use explicit Content-Type and Accept headers to signal
+ * that they expect JSON responses. This helps us serve appropriate format
+ * without requiring file extensions in the URL.
+ *
+ * Checks for:
+ * - X-Requested-With: XMLHttpRequest (jQuery, older frameworks)
+ * - Accept: *application/json* (modern APIs, fetch, axios)
+ *
+ * @param envelope - Request envelope with HTTP headers
+ * @returns true if request appears to come from API/AJAX client
  */
 function isAjaxRequest(envelope) {
     const accept = envelope.headers['accept'];
@@ -73,28 +152,5 @@ function isAjaxRequest(envelope) {
     if (typeof accept === 'string' && accept.includes('application/json'))
         return true;
     return false;
-}
-/**
- * Validate path for security issues.
- * Rejects null bytes, path traversal attempts, etc.
- */
-function isPathSafe(path) {
-    // Reject null bytes
-    if (path.includes('\0'))
-        return false;
-    // Reject suspicious sequences
-    if (path.includes('../') || path.includes('..\\'))
-        return false;
-    // Reject all forms of encoded traversal and null bytes
-    const lower = path.toLowerCase();
-    if (lower.includes('%00') || // null byte
-        lower.includes('%2e%2e') || // ..
-        lower.includes('%252e') || // double-encoded .
-        lower.includes('%5c') || // backslash
-        lower.includes('%2f%2e%2e') // /..
-    ) {
-        return false;
-    }
-    return true;
 }
 //# sourceMappingURL=classify.js.map

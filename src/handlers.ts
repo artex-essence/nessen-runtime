@@ -1,12 +1,16 @@
 /**
  * handlers.ts
- * Request handlers: home page (HTML), health API (JSON), badge (SVG).
- * Demonstrations of response builders and context usage.
+ *
+ * Request handlers for demo endpoints: home page, health API, and badge generation.
+ * Demonstrates response builders, context usage, and security best practices.
+ *
+ * @module handlers
  */
 
 import type { RequestContext } from './context.js';
 import type { RuntimeResponse } from './envelope.js';
 import { htmlResponse, svgResponse } from './response.js';
+import { escapeHtml } from './utils.js';
 
 /**
  * Handle GET / - Home page with request info.
@@ -123,23 +127,8 @@ function generateBadge(label: string, value: string): string {
 }
 
 /**
- * Generate error badge.
+ * Generate error badge with error message.
  */
 function generateErrorBadge(message: string): string {
   return generateBadge('error', message);
-}
-
-/**
- * Escape HTML to prevent XSS.
- */
-function escapeHtml(text: string): string {
-  const map: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-    '/': '&#x2F;', // Prevents breaking out of inline scripts
-  };
-  return text.replace(/[&<>"'\/]/g, char => map[char] ?? char);
 }

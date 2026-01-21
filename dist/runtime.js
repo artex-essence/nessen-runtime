@@ -1,8 +1,13 @@
 "use strict";
 /**
  * runtime.ts
- * Core runtime: handles RequestEnvelope, routes, state gating, telemetry, timeout enforcement.
- * Transport-neutral: operates on envelopes, returns responses.
+ *
+ * Core request handling runtime implementing the state machine, routing, and telemetry.
+ * Operates on transport-neutral RequestEnvelope/RuntimeResponse types, enabling use
+ * with any HTTP framework or protocol. Enforces request timeouts, state gating, and
+ * security validations.
+ *
+ * @module runtime
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Runtime = void 0;
@@ -14,6 +19,7 @@ const context_js_1 = require("./context.js");
 const handlers_js_1 = require("./handlers.js");
 const health_js_1 = require("./health.js");
 const response_js_1 = require("./response.js");
+const utils_js_1 = require("./utils.js");
 const REQUEST_TIMEOUT_MS = 30000; // 30 seconds per-request timeout
 /**
  * Core runtime engine. Single instance created by server.ts.
@@ -90,7 +96,7 @@ class Runtime {
         // Classify request
         const classification = (0, classify_js_1.classifyRequest)(envelope);
         // Security: validate path
-        if (!(0, classify_js_1.isPathSafe)(classification.pathInfo)) {
+        if (!(0, utils_js_1.isPathSafe)(classification.pathInfo)) {
             return (0, response_js_1.errorResponse)('Invalid path', 400, classification.expects === 'json', undefined, envelope.id);
         }
         // Route matching

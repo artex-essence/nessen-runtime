@@ -1,15 +1,24 @@
 /**
  * router.ts
- * Fast O(1) routing with exact match and parameter routes.
- * Static routes only in v0.1. Deterministic precedence: exact > param > 404.
+ *
+ * High-performance URL router with O(1) exact matching and O(n) parameter routing.
+ * Static routes only (no dynamic patterns). Routes are registered during runtime
+ * initialization and used for the lifetime of the process.
+ *
+ * Routing precedence:
+ * 1. Exact path match (O(1) hash lookup)
+ * 2. Parameter patterns like /badge/:label/:value.svg (O(n) regex, n = pattern count)
+ * 3. 404 not found
+ *
+ * @module router
  */
 
 export interface Route {
   readonly method: string;
   readonly pattern: string;
-  readonly handler: string; // handler function name
-  readonly isParam: boolean;
-  readonly regex?: RegExp;
+  readonly handler: string; // Name of handler function
+  readonly isParam: boolean; // Whether pattern contains :param
+  readonly regex?: RegExp;  // Compiled regex for parameter routes
 }
 
 export interface RouteMatch {
@@ -18,21 +27,39 @@ export interface RouteMatch {
 }
 
 /**
- * Router with O(1) exact match and parameter route support.
+ * Fast router supporting exact and parameter-based routes.
+ *
+ * Uses two mechanisms:
+ * - Exact routes stored in Map for O(1) lookup (GET /health)
+ * - Parameter routes in array with regex matching (GET /badge/:label/:value.svg)
+ *
+ * Thread-safe if registration is complete before routing begins.
+ * Routing is deterministic: exact matches win over parameter patterns.
  */
 export class Router {
   private exactRoutes: Map<string, Route> = new Map();
   private paramRoutes: Route[] = [];
 
   /**
-   * Register a route. Call during initialization only.
+   * Registers a new route during initialization.
+   *
+   * Must be called before routing requests. Parameter routes (with :param)
+   * are compiled to regex at registration time to avoid runtime compilation overhead.
+   *
+   * @param method - HTTP method (GET, POST, etc.), normalized to uppercase
+   * @param pattern - URL pattern (e.g., "/" or "/badge/:label/:value.svg")
+   * @param handler - Name of handler function to call (dispatched in runtime)
+   *
+   * @example
+   * router.register('GET', '/', 'home');
+   * router.register('GET', '/badge/:label/:value.svg', 'badge');
    */
   register(method: string, pattern: string, handler: string): void {
     const normalized = method.toUpperCase();
     const isParam = pattern.includes(':');
 
     if (isParam) {
-      // Parameter route: convert to regex
+      // Parameter route: compile pattern to regex for matching
       const regex = patternToRegex(pattern);
       this.paramRoutes.push({
         method: normalized,
@@ -42,7 +69,7 @@ export class Router {
         regex,
       });
     } else {
-      // Exact route
+      // Exact route: store in hash map for O(1) lookup
       const key = `${normalized}:${pattern}`;
       this.exactRoutes.set(key, {
         method: normalized,
@@ -54,45 +81,71 @@ export class Router {
   }
 
   /**
-   * Match request to route. Returns handler name + params, or null if no match.
+   * Matches a request to a registered route.
+   *
+   * First tries exact path match (O(1)), then parameter patterns (O(n)).
+   * Returns handler name and extracted parameters, or null if no route matches.
+   *
+   * @param method - HTTP method (GET, POST, etc.)
+   * @param path - Request path to match
+   * @returns RouteMatch with handler name and params, or null if not found
+   *
+   * @example
+   * const match = router.match('GET', '/badge/status/ok.svg');
+   * // { handler: 'badge', params: { label: 'status', value: 'ok' } }
    */
   match(method: string, path: string): RouteMatch | null {
     const normalized = method.toUpperCase();
 
-    // Try exact match first (O(1))
+    // Try exact match first (O(1) hash lookup)
     const exactKey = `${normalized}:${path}`;
     const exact = this.exactRoutes.get(exactKey);
     if (exact) {
       return { handler: exact.handler, params: {} };
     }
 
-    // Try parameter routes (O(n) but n is small)
+    // Try parameter routes (O(n) but n is small, typically 3-5 routes)
     for (const route of this.paramRoutes) {
       if (route.method !== normalized) continue;
       if (!route.regex) continue;
 
       const match = route.regex.exec(path);
       if (match && match.groups) {
+        // Regex named groups become route parameters
         return { handler: route.handler, params: match.groups };
       }
     }
 
+    // No route matched
     return null;
   }
 }
 
 /**
- * Convert route pattern like "/badge/:label/:value.svg" to regex.
- * Captures named groups for parameters.
+ * Converts a route pattern to a compiled regex for matching.
+ *
+ * Converts pattern syntax like "/badge/:label/:value.svg" to a regex that:
+ * - Captures named groups for each :param
+ * - Handles literal path segments and file extensions
+ * - Matches exactly (anchored with ^ and $)
+ *
+ * @param pattern - Route pattern with :param placeholders
+ * @returns Compiled RegExp with named capture groups
+ *
+ * @example
+ * patternToRegex('/badge/:label/:value.svg')
+ * // Matches: /badge/status/ok.svg
+ * // Returns: { label: 'status', value: 'ok' }
  */
 function patternToRegex(pattern: string): RegExp {
-  // Escape special regex chars except ':'
+  // Escape special regex chars (except : which we handle next)
   let regexStr = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
 
-  // Replace :param with named capture group
+  // Replace :paramName with named capture groups
+  // Each parameter captures one path segment (no slashes)
   regexStr = regexStr.replace(/:(\w+)/g, (_, name) => `(?<${name}>[^/]+)`);
 
-  // Anchor to start and end
+  // Anchor to match entire path exactly (not just a prefix)
   regexStr = `^${regexStr}$`;
 
   return new RegExp(regexStr);

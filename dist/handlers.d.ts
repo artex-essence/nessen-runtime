@@ -1,7 +1,10 @@
 /**
  * handlers.ts
- * Request handlers: home page (HTML), health API (JSON), badge (SVG).
- * Demonstrations of response builders and context usage.
+ *
+ * Request handlers for demo endpoints: home page, health API, and badge generation.
+ * Demonstrates response builders, context usage, and security best practices.
+ *
+ * @module handlers
  */
 import type { RequestContext } from './context.js';
 import type { RuntimeResponse } from './envelope.js';

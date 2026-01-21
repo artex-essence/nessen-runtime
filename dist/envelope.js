@@ -1,8 +1,13 @@
 "use strict";
 /**
  * envelope.ts
- * Transport-neutral request envelope. Decouples HTTP from core runtime logic.
- * Contains all necessary request data in a safe, immutable shape.
+ *
+ * Transport-neutral request and response envelope definitions.
+ * Decouples HTTP specifics from core runtime logic by providing a protocol-agnostic
+ * data model. Can be extended for gRPC, QUIC, or other transports without changing
+ * routing, state management, or request handling logic.
+ *
+ * @module envelope
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateRequestId = generateRequestId;

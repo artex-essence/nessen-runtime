@@ -1,6 +1,15 @@
 /**
  * health.ts
- * Health and readiness endpoint logic based on runtime state and telemetry.
+ *
+ * Health check endpoint handlers for orchestration and monitoring.
+ * Implements Kubernetes-style liveness and readiness probes, plus detailed health API.
+ *
+ * Endpoints:
+ * - GET /health: Liveness check (is process alive?)
+ * - GET /ready: Readiness check (is ready for traffic?)
+ * - GET /api/health: Detailed metrics (JSON)
+ *
+ * @module health
  */
 
 import type { StateManager } from './state.js';
@@ -9,8 +18,14 @@ import { jsonResponse, textResponse } from './response.js';
 import type { RuntimeResponse } from './envelope.js';
 
 /**
- * Handle /health (liveness) endpoint.
- * Returns 200 if process is alive, 503 if stopping.
+ * Handles GET /health (liveness probe).
+ *
+ * Returns 200 OK if the process is alive and running.
+ * Used by orchestration platforms (Kubernetes) to determine if the container
+ * should be restarted. Should fail only if the process is truly dead/stopping.
+ *
+ * @param state - Runtime state manager
+ * @returns 200 if alive, 503 if stopping
  */
 export function handleLiveness(state: StateManager): RuntimeResponse {
   if (state.isAlive()) {
@@ -20,8 +35,14 @@ export function handleLiveness(state: StateManager): RuntimeResponse {
 }
 
 /**
- * Handle /ready (readiness) endpoint.
- * Returns 200 only when READY, 503 otherwise.
+ * Handles GET /ready (readiness probe).
+ *
+ * Returns 200 OK if the runtime is fully ready to accept traffic.
+ * Used by orchestration platforms to determine if the instance should
+ * receive traffic. Returns 503 if draining, degraded, or not yet started.
+ *
+ * @param state - Runtime state manager
+ * @returns 200 if ready, 503 if not ready (includes reason)
  */
 export function handleReadiness(state: StateManager): RuntimeResponse {
   if (state.isReady()) {
@@ -31,30 +52,44 @@ export function handleReadiness(state: StateManager): RuntimeResponse {
 }
 
 /**
- * Handle /api/health (detailed health check).
- * Returns JSON with state, uptime, memory, CPU, event-loop lag.
+ * Handles GET /api/health (detailed health check).
+ *
+ * Returns comprehensive JSON health information useful for:
+ * - Monitoring dashboards
+ * - Performance debugging
+ * - Capacity planning
+ * - Identifying problems
+ *
+ * Refreshes telemetry snapshot on each call (relatively expensive).
+ * In production, consider caching this endpoint or reducing call frequency.
+ *
+ * @param state - Runtime state manager
+ * @param telemetry - Telemetry collector
+ * @returns JSON response with detailed health metrics
  */
 export function handleHealthApi(state: StateManager, telemetry: Telemetry): RuntimeResponse {
+  // Refresh snapshot to get fresh metrics
   telemetry.refreshSnapshot();
   const snapshot = telemetry.getSnapshot();
 
   const data = {
-    ok: state.canAcceptRequests(),
-    state: state.current,
-    uptimeMs: state.uptimeMs,
-    mem: snapshot.memoryUsageMB,
-    cpu: snapshot.cpuUsagePercent,
-    eventLoopLagMs: snapshot.eventLoopLagMs,
+    ok: state.canAcceptRequests(),      // Overall health (ready to handle requests)
+    state: state.current,                // Current runtime state
+    uptimeMs: state.uptimeMs,           // How long process has been running
+    mem: snapshot.memoryUsageMB,        // Memory usage (MB)
+    cpu: snapshot.cpuUsagePercent,      // CPU usage (%)
+    eventLoopLagMs: snapshot.eventLoopLagMs, // Event loop lag (ms, 0 = no lag)
     requests: {
-      total: snapshot.requestsTotal,
-      active: snapshot.requestsActive,
-      p50Ms: snapshot.requestDurationP50Ms,
-      p95Ms: snapshot.requestDurationP95Ms,
-      p99Ms: snapshot.requestDurationP99Ms,
-      avgResponseBytes: snapshot.responseSizeAvgBytes,
+      total: snapshot.requestsTotal,    // Total requests since startup
+      active: snapshot.requestsActive,  // Currently in-flight requests
+      p50Ms: snapshot.requestDurationP50Ms,   // Median request duration
+      p95Ms: snapshot.requestDurationP95Ms,   // 95th percentile (slow requests)
+      p99Ms: snapshot.requestDurationP99Ms,   // 99th percentile (very slow requests)
+      avgResponseBytes: snapshot.responseSizeAvgBytes, // Average response size
     },
   };
 
+  // HTTP status: 200 if ready, 503 if degraded/draining
   const statusCode = state.canAcceptRequests() ? 200 : 503;
   return jsonResponse(data, statusCode);
 }

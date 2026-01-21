@@ -1,18 +1,24 @@
 /**
  * runtime.ts
- * Core runtime: handles RequestEnvelope, routes, state gating, telemetry, timeout enforcement.
- * Transport-neutral: operates on envelopes, returns responses.
+ *
+ * Core request handling runtime implementing the state machine, routing, and telemetry.
+ * Operates on transport-neutral RequestEnvelope/RuntimeResponse types, enabling use
+ * with any HTTP framework or protocol. Enforces request timeouts, state gating, and
+ * security validations.
+ *
+ * @module runtime
  */
 
 import type { RequestEnvelope, RuntimeResponse } from './envelope.js';
 import { StateManager } from './state.js';
 import { Telemetry } from './telemetry.js';
 import { Router } from './router.js';
-import { classifyRequest, isPathSafe } from './classify.js';
+import { classifyRequest } from './classify.js';
 import { createContext } from './context.js';
 import { handleHome, handleBadge } from './handlers.js';
 import { handleLiveness, handleReadiness, handleHealthApi } from './health.js';
 import { errorResponse, serviceUnavailableResponse, notFoundResponse } from './response.js';
+import { isPathSafe } from './utils.js';
 
 const REQUEST_TIMEOUT_MS = 30000; // 30 seconds per-request timeout
 

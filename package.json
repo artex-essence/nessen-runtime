@@ -1,8 +1,9 @@
 {
   "name": "nessen-runtime",
-  "version": "0.1.0",
-  "description": "Production-grade minimal Node.js HTTP runtime with zero dependencies",
-  "main": "dist/server.js",
+  "version": "1.0.0",
+  "description": "Enterprise-grade HTTP runtime for Node.js. Zero dependencies, TypeScript, production-ready.",
+  "main": "dist/runtime.js",
+  "types": "dist/runtime.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
@@ -14,8 +15,18 @@
     "type": "git",
     "url": "git+https://github.com/artex-essence/nessen-runtime.git"
   },
-  "keywords": ["runtime", "http", "server", "minimal", "performance"],
-  "author": "",
+  "keywords": [
+    "http",
+    "runtime",
+    "server",
+    "middleware",
+    "performance",
+    "security",
+    "typescript",
+    "nodejs",
+    "enterprise"
+  ],
+  "author": "artex-essence",
   "license": "MIT",
   "type": "commonjs",
   "engines": {

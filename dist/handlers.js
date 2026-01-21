@@ -1,13 +1,17 @@
 "use strict";
 /**
  * handlers.ts
- * Request handlers: home page (HTML), health API (JSON), badge (SVG).
- * Demonstrations of response builders and context usage.
+ *
+ * Request handlers for demo endpoints: home page, health API, and badge generation.
+ * Demonstrates response builders, context usage, and security best practices.
+ *
+ * @module handlers
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleHome = handleHome;
 exports.handleBadge = handleBadge;
 const response_js_1 = require("./response.js");
+const utils_js_1 = require("./utils.js");
 /**
  * Handle GET / - Home page with request info.
  */
@@ -33,14 +37,14 @@ function handleHome(ctx, runtimeState) {
   <p>Production-grade minimal Node.js HTTP runtime</p>
   
   <div class="info">
-    <div><span class="label">Request ID:</span> <code>${escapeHtml(ctx.id)}</code></div>
-    <div><span class="label">Method:</span> <code>${escapeHtml(ctx.method)}</code></div>
-    <div><span class="label">Path Info:</span> <code>${escapeHtml(ctx.pathInfo)}</code></div>
-    <div><span class="label">Base Path:</span> <code>${escapeHtml(ctx.basePath)}</code></div>
-    <div><span class="label">Intent:</span> <code>${escapeHtml(ctx.intent)}</code></div>
-    <div><span class="label">Expects:</span> <code>${escapeHtml(ctx.expects)}</code></div>
+    <div><span class="label">Request ID:</span> <code>${(0, utils_js_1.escapeHtml)(ctx.id)}</code></div>
+    <div><span class="label">Method:</span> <code>${(0, utils_js_1.escapeHtml)(ctx.method)}</code></div>
+    <div><span class="label">Path Info:</span> <code>${(0, utils_js_1.escapeHtml)(ctx.pathInfo)}</code></div>
+    <div><span class="label">Base Path:</span> <code>${(0, utils_js_1.escapeHtml)(ctx.basePath)}</code></div>
+    <div><span class="label">Intent:</span> <code>${(0, utils_js_1.escapeHtml)(ctx.intent)}</code></div>
+    <div><span class="label">Expects:</span> <code>${(0, utils_js_1.escapeHtml)(ctx.expects)}</code></div>
     <div><span class="label">Is AJAX:</span> <code>${ctx.isAjax}</code></div>
-    <div><span class="label">Runtime State:</span> <code>${escapeHtml(runtimeState)}</code></div>
+    <div><span class="label">Runtime State:</span> <code>${(0, utils_js_1.escapeHtml)(runtimeState)}</code></div>
     <div><span class="label">Response Time:</span> <code>${elapsed}ms</code></div>
   </div>
 
@@ -90,8 +94,8 @@ function generateBadge(label, value) {
     const labelWidth = Math.max(60, label.length * 7);
     const valueWidth = Math.max(60, value.length * 7);
     const totalWidth = labelWidth + valueWidth;
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="20" role="img" aria-label="${escapeHtml(label)}: ${escapeHtml(value)}">
-  <title>${escapeHtml(label)}: ${escapeHtml(value)}</title>
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="20" role="img" aria-label="${(0, utils_js_1.escapeHtml)(label)}: ${(0, utils_js_1.escapeHtml)(value)}">
+  <title>${(0, utils_js_1.escapeHtml)(label)}: ${(0, utils_js_1.escapeHtml)(value)}</title>
   <linearGradient id="s" x2="0" y2="100%">
     <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
     <stop offset="1" stop-opacity=".1"/>
@@ -105,31 +109,17 @@ function generateBadge(label, value) {
     <rect width="${totalWidth}" height="20" fill="url(#s)"/>
   </g>
   <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
-    <text x="${labelWidth / 2}" y="15" fill="#010101" fill-opacity=".3">${escapeHtml(label)}</text>
-    <text x="${labelWidth / 2}" y="14">${escapeHtml(label)}</text>
-    <text x="${labelWidth + valueWidth / 2}" y="15" fill="#010101" fill-opacity=".3">${escapeHtml(value)}</text>
-    <text x="${labelWidth + valueWidth / 2}" y="14">${escapeHtml(value)}</text>
+    <text x="${labelWidth / 2}" y="15" fill="#010101" fill-opacity=".3">${(0, utils_js_1.escapeHtml)(label)}</text>
+    <text x="${labelWidth / 2}" y="14">${(0, utils_js_1.escapeHtml)(label)}</text>
+    <text x="${labelWidth + valueWidth / 2}" y="15" fill="#010101" fill-opacity=".3">${(0, utils_js_1.escapeHtml)(value)}</text>
+    <text x="${labelWidth + valueWidth / 2}" y="14">${(0, utils_js_1.escapeHtml)(value)}</text>
   </g>
 </svg>`;
 }
 /**
- * Generate error badge.
+ * Generate error badge with error message.
  */
 function generateErrorBadge(message) {
     return generateBadge('error', message);
-}
-/**
- * Escape HTML to prevent XSS.
- */
-function escapeHtml(text) {
-    const map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;',
-        '/': '&#x2F;', // Prevents breaking out of inline scripts
-    };
-    return text.replace(/[&<>"'\/]/g, char => map[char] ?? char);
 }
 //# sourceMappingURL=handlers.js.map
