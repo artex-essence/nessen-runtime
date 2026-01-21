@@ -15,28 +15,28 @@ Nessen is a lightweight, high-performance HTTP runtime designed for building sca
 
 ## Features
 
-### 🔐 Security First
+### Security First
 - **RFC 7230 Header Validation** - Prevents header injection attacks
 - **XSS Prevention** - HTML entity escaping on all outputs
 - **Input Validation** - Content-Type, URL length, and body size limits
 - **Backpressure Handling** - Prevents DoS attacks via slow clients
 - **Graceful Error Handling** - No stack traces in production
 
-### ⚡ High Performance
+### High Performance
 - **O(1) Routing** - Constant-time path matching
 - **Optimized Percentile Calculation** - O(n) quickselect algorithm
 - **Response Compression** - Gzip and Brotli support (65-80% reduction)
 - **Fast URL Parsing** - No object allocation overhead
 - **Snapshot Caching** - 100ms TTL for repeated requests
 
-### 🛡️ Production Ready
+### Production Ready
 - **Graceful Shutdown** - 30-second request draining
 - **Comprehensive Error Handling** - All error paths covered
 - **Memory Management** - No leaks, bounded collections
 - **Health Endpoints** - Liveness, readiness, and metrics
 - **Signal Handling** - SIGTERM, SIGINT, uncaught exceptions
 
-### 🧩 Flexible Architecture
+### Flexible Architecture
 - **Composable Middleware** - Express-like pipeline system
 - **Transport Neutral** - Decoupled from HTTP specifics
 - **Type Safe** - 100% TypeScript coverage
@@ -275,19 +275,19 @@ npm test
 ## Security Considerations
 
 ### What's Protected
-- ✅ XSS attacks (HTML entity escaping)
-- ✅ Header injection (RFC 7230 validation)
-- ✅ Host header attacks (whitelist validation)
-- ✅ DoS via slow clients (backpressure handling)
-- ✅ DoS via large payloads (size limits)
-- ✅ Unbounded memory (collection limits)
+- XSS attacks (HTML entity escaping)
+- Header injection (RFC 7230 validation)
+- Host header attacks (whitelist validation)
+- DoS via slow clients (backpressure handling)
+- DoS via large payloads (size limits)
+- Unbounded memory (collection limits)
 
 ### What You Must Handle
-- 🔒 Authentication (implement in handlers)
-- 🔒 Authorization (implement in middleware)
-- 🔒 Input validation (beyond built-in checks)
-- 🔒 Secrets management (use environment variables)
-- 🔒 HTTPS/TLS (use reverse proxy like nginx)
+- Authentication (implement in handlers)
+- Authorization (implement in middleware)
+- Input validation (beyond built-in checks)
+- Secrets management (use environment variables)
+- HTTPS/TLS (use reverse proxy like nginx)
 
 ## Contributing
 
@@ -299,15 +299,11 @@ Contributions welcome! Please:
 
 ## License
 
-MIT
+Apache License 2.0
 
 ## Support
 
-- 📖 [Full API Documentation](./docs/API.md)
-- 🎯 [Middleware Guide](./docs/MIDDLEWARE.md)
-- 🚀 [Deployment Guide](./docs/DEPLOYMENT.md)
-- 🐛 [Issue Tracker](https://github.com/artex-essence/nessen-runtime/issues)
-
----
-
-Built with ❤️ for performance and reliability.
+- [Full API Documentation](./docs/API.md)
+- [Middleware Guide](./docs/MIDDLEWARE.md)
+- [Deployment Guide](./docs/DEPLOYMENT.md)
+- [Issue Tracker](https://github.com/artex-essence/nessen-runtime/issues)
