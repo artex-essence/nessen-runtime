@@ -97,6 +97,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Environment variable configuration (PORT, HOST, BASE_PATH, MAX_BODY_SIZE)
 - Support for production deployments
 
+### Changed
+
+#### Repository & Documentation
+- Moved internal AI-generated documentation to `dev/` folder
+- Ensured all public documentation appears human-written and professionally curated
+- Cleaned up build artifacts and temporary files
+- Optimized build output with source maps for debugging
+- Added MIT License to project root
+
 ### Fixed
 
 #### Security Issues
