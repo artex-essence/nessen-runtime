@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### CI/CD
+- GitHub Actions workflow (`.github/workflows/ci.yml`) running npm ci and build on push/PR to main with Node.js 20 and cached npm installs.
+
 #### Core Runtime
 - HTTP server with full request/response handling
 - Transport-neutral architecture (RequestEnvelope abstraction)
