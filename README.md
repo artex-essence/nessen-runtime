@@ -186,15 +186,42 @@ npm run lint       # Lint
 
 ## Routing
 
-Routes are matched in order:
-1. **Exact static routes** - O(1) map lookup
-2. **Dynamic routes** - O(k) scan where k ≈ segments
-3. **404** - Not found
+Routing is optimized for the common case (static routes) while maintaining predictable performance for dynamic routes.
+
+### Routing Strategy
+
+Routes are processed in registration order:
+1. **Exact static routes** — O(1) hash map lookup
+   - `/api/users` → instant match via `Map<"GET:/api/users", handler>`
+   - Best for REST endpoints, health checks, static paths
+
+2. **Dynamic routes with parameters** — O(k) linear scan + regex match
+   - `/api/users/:id` → iterate registered dynamic routes, match regex
+   - k = number of dynamic route patterns (typically 5-20)
+   - Each param extraction is O(1)
+
+3. **404** — Not found
+
+### Complexity Analysis
+
+| Route Type | Complexity | Use Case | Latency |
+|------------|-----------|----------|---------|
+| Static (`/api/users`) | O(1) | Most endpoints | ~0.1ms |
+| Single param (`/:id`) | O(k) where k≈5-20 | REST resources | ~0.2ms |
+| Multiple params (`/:id/sub/:subId`) | O(k) | Nested resources | ~0.3ms |
+
+In production: routing accounts for <1% of request latency (see [BENCHMARKS.md](./docs/BENCHMARKS.md) for measured data).
+
+### Examples
 
 ```typescript
-runtime.route.get('/api/users', handler);           // Static - fastest
-runtime.route.get('/api/users/:id', handler);       // Dynamic
-runtime.route.post('/api/users/:id/posts/:postId', handler);
+// Static routes (fastest - O(1))
+runtime.route.get('/api/users', handler);              // Direct hash lookup
+runtime.route.get('/health', healthHandler);
+
+// Dynamic routes (optimized - O(k) where k is small)
+runtime.route.get('/api/users/:id', getUserHandler);   // Single param
+runtime.route.post('/api/users/:id/posts/:postId', getPostHandler);  // Multiple params
 ```
 
 ## License
@@ -206,5 +233,5 @@ Apache License 2.0
 - [API Reference](./docs/API.md)
 - [Middleware Guide](./docs/MIDDLEWARE.md)
 - [Deployment Guide](./docs/DEPLOYMENT.md)
-- [Benchmarks](./BENCHMARKS.md)
+- [Benchmarks](./docs/BENCHMARKS.md)
 - [Issues](https://github.com/artex-essence/nessen-runtime/issues)
