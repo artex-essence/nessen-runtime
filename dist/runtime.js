@@ -20,6 +20,10 @@ const handlers_js_1 = require("./handlers.js");
 const health_js_1 = require("./health.js");
 const response_js_1 = require("./response.js");
 const utils_js_1 = require("./utils.js");
+const middleware_js_1 = require("./middleware.js");
+const logging_js_1 = require("./middleware/logging.js");
+const rateLimit_js_1 = require("./middleware/rateLimit.js");
+const compression_js_1 = require("./middleware/compression.js");
 const REQUEST_TIMEOUT_MS = 30000; // 30 seconds per-request timeout
 /**
  * Core runtime engine. Single instance created by server.ts.
@@ -28,10 +32,15 @@ class Runtime {
     state;
     telemetry;
     router;
+    pipeline;
     constructor() {
         this.state = new state_js_1.StateManager();
         this.telemetry = new telemetry_js_1.Telemetry();
         this.router = new router_js_1.Router();
+        this.pipeline = new middleware_js_1.MiddlewarePipeline()
+            .use((0, logging_js_1.createLoggingMiddleware)())
+            .use((0, rateLimit_js_1.createRateLimitMiddleware)())
+            .use((0, compression_js_1.createCompressionMiddleware)());
         // Register routes
         this.setupRoutes();
         // Transition to READY after initialization
@@ -63,14 +72,20 @@ class Runtime {
         this.telemetry.requestStart();
         let responseSize = 0;
         try {
-            // Enforce timeout with cancellable timer
-            const timeoutController = { cancelled: false };
+            let timeoutHandle;
+            const timeout = new Promise((resolve) => {
+                timeoutHandle = setTimeout(() => {
+                    resolve((0, response_js_1.errorResponse)('Request timeout', 503, false, undefined, envelope.id));
+                }, REQUEST_TIMEOUT_MS);
+                timeoutHandle.unref?.();
+            });
             const response = await Promise.race([
                 this.handleInternal(envelope),
-                this.timeoutHandler(REQUEST_TIMEOUT_MS, timeoutController, envelope.id),
+                timeout,
             ]);
-            // Cancel timeout to prevent memory leak
-            timeoutController.cancelled = true;
+            if (timeoutHandle) {
+                clearTimeout(timeoutHandle);
+            }
             // Calculate response size for telemetry
             responseSize = Buffer.isBuffer(response.body)
                 ? response.body.length
@@ -106,8 +121,9 @@ class Runtime {
         }
         // Build context
         const ctx = (0, context_js_1.createContext)(envelope, classification, match.params);
-        // Dispatch to handler
-        return this.dispatch(match.handler, ctx);
+        // Dispatch through middleware pipeline and handler
+        const finalHandler = (context) => this.dispatch(match.handler, context);
+        return this.pipeline.handle(ctx, finalHandler);
     }
     /**
      * Dispatch to named handler.
@@ -127,29 +143,6 @@ class Runtime {
             default:
                 return (0, response_js_1.notFoundResponse)(ctx.pathInfo, ctx.expects === 'json', ctx.id);
         }
-    }
-    /**
-     * Timeout handler returns 503 after timeout (with cancellation support).
-     */
-    async timeoutHandler(ms, controller, requestId) {
-        await new Promise(resolve => {
-            const timer = setTimeout(() => {
-                if (!controller.cancelled) {
-                    resolve();
-                }
-            }, ms);
-            // Check periodically for cancellation to clean up early
-            const checkInterval = setInterval(() => {
-                if (controller.cancelled) {
-                    clearTimeout(timer);
-                    clearInterval(checkInterval);
-                    resolve();
-                }
-            }, 100);
-        });
-        return controller.cancelled
-            ? (0, response_js_1.errorResponse)('Request completed', 200, false, undefined, requestId) // Never returned
-            : (0, response_js_1.errorResponse)('Request timeout', 503, false, undefined, requestId);
     }
     /**
      * Get state manager (for server.ts shutdown).

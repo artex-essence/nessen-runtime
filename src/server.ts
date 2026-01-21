@@ -69,7 +69,12 @@ export function startServer(): Server {
   });
 
   // Setup graceful shutdown handlers for SIGTERM/SIGINT
-  setupSignalHandlers(server, runtime.getState(), runtime.getTelemetry());
+  setupSignalHandlers(server, runtime.getState(), runtime.getTelemetry(), (result, exitCode) => {
+    if (!result.drained) {
+      console.warn(`[server] Forced shutdown with ${result.activeRequests} active requests`);
+    }
+    process.exit(exitCode);
+  });
 
   // Start listening
   server.listen(PORT, HOST, () => {
@@ -172,47 +177,40 @@ async function readBody(req: IncomingMessage, maxSize: number): Promise<Buffer> 
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
-    const HIGH_WATER_MARK = 64 * 1024; // 64KB - pause reading if buffered data exceeds this
 
     const onData = (chunk: Buffer) => {
       size += chunk.length;
 
-      // Check size limit
+      // Check size limit early to avoid extra buffering
       if (size > maxSize) {
-        req.removeListener('data', onData);
-        req.removeListener('end', onEnd);
-        req.removeListener('error', onError);
+        cleanup();
         req.destroy();
         reject(new Error('Payload Too Large'));
         return;
       }
 
       chunks.push(chunk);
-
-      // Implement backpressure: pause if too much buffered
-      if (chunks.reduce((acc, c) => acc + c.length, 0) > HIGH_WATER_MARK) {
-        req.pause();
-      }
     };
 
     const onEnd = () => {
-      req.removeListener('data', onData);
-      req.removeListener('error', onError);
+      cleanup();
       resolve(Buffer.concat(chunks));
     };
 
     const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    const cleanup = () => {
       req.removeListener('data', onData);
       req.removeListener('end', onEnd);
-      reject(error);
+      req.removeListener('error', onError);
     };
 
     req.on('data', onData);
     req.on('end', onEnd);
     req.on('error', onError);
-
-    // Resume if paused (in case it's already buffered)
-    req.resume();
   });
 }
 
@@ -230,7 +228,7 @@ function sendResponse(res: ServerResponse, response: RuntimeResponse): void {
   res.statusCode = response.statusCode;
 
   // Set all response headers
-  for (const [key, value] of Object.entries(response.headers)) {
+  for (const [key, value] of Object.entries(response.headers ?? {})) {
     // Type guard: value can be string or string array
     if (typeof value === 'string' || Array.isArray(value)) {
       res.setHeader(key, value);

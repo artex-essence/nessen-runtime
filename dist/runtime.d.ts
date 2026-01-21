@@ -18,6 +18,7 @@ export declare class Runtime {
     private readonly state;
     private readonly telemetry;
     private readonly router;
+    private readonly pipeline;
     constructor();
     /**
      * Setup routes during initialization.
@@ -35,10 +36,6 @@ export declare class Runtime {
      * Dispatch to named handler.
      */
     private dispatch;
-    /**
-     * Timeout handler returns 503 after timeout (with cancellation support).
-     */
-    private timeoutHandler;
     /**
      * Get state manager (for server.ts shutdown).
      */

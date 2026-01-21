@@ -14,6 +14,10 @@ export interface ShutdownOptions {
     readonly signal: string;
     readonly timeout?: number;
 }
+export interface ShutdownResult {
+    drained: boolean;
+    activeRequests: number;
+}
 /**
  * Performs graceful shutdown sequence with proper cleanup.
  *
@@ -29,7 +33,7 @@ export interface ShutdownOptions {
  * @param telemetry - Telemetry system to shutdown
  * @param options - Shutdown options (signal name, timeout)
  */
-export declare function gracefulShutdown(server: Server, state: StateManager, telemetry: Telemetry, options: ShutdownOptions): Promise<void>;
+export declare function gracefulShutdown(server: Server, state: StateManager, telemetry: Telemetry, options: ShutdownOptions): Promise<ShutdownResult>;
 /**
  * Sets up signal handlers for graceful shutdown.
  *
@@ -46,5 +50,5 @@ export declare function gracefulShutdown(server: Server, state: StateManager, te
  * @param state - Runtime state manager
  * @param telemetry - Telemetry system to shutdown
  */
-export declare function setupSignalHandlers(server: Server, state: StateManager, telemetry: Telemetry): void;
+export declare function setupSignalHandlers(server: Server, state: StateManager, telemetry: Telemetry, onComplete?: (result: ShutdownResult, exitCode: number) => void): void;
 //# sourceMappingURL=shutdown.d.ts.map

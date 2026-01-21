@@ -5,12 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Middleware pipeline now enabled by default with logging, rate limiting, and response compression.
+- ESLint configuration (ES2020+ recommended rules) with TypeScript parser support.
+- Basic test suite (typecheck + build validation).
+
+### Changed
+- Simplified per-request timeout handling to a single timer with proper cleanup.
+- Graceful shutdown no longer calls `process.exit` internally; callers decide exit semantics.
+- Test script now runs: typecheck → build → lint → all combined.
+
+### Fixed
+- Request body parsing now tracks size in O(1) and cleans listeners without pause/resume thrash.
+- Graceful shutdown returns status instead of forcing termination, preserving library embedders.
+
+### CI/CD
+- GitHub Actions workflow now runs npm test (includes typecheck, build, lint).
+
 ## [1.0.0] - 2026-01-21
 
 ### Added
 
 #### CI/CD
-- GitHub Actions workflow (`.github/workflows/ci.yml`) running npm ci and build on push/PR to main with Node.js 20 and cached npm installs.
+- GitHub Actions workflow (`.github/workflows/ci.yml`) running npm ci and npm test (typecheck + build) on push/PR to main with Node.js 20 and cached npm installs.
 
 #### Core Runtime
 - HTTP server with full request/response handling
@@ -176,3 +195,4 @@ This is the initial release. All features are new.
 ---
 
 [1.0.0]: https://github.com/artex-essence/nessen-runtime/releases/tag/v1.0.0
+[Unreleased]: https://github.com/artex-essence/nessen-runtime/compare/v1.0.0...HEAD

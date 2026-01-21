@@ -19,6 +19,10 @@ import { handleHome, handleBadge } from './handlers.js';
 import { handleLiveness, handleReadiness, handleHealthApi } from './health.js';
 import { errorResponse, serviceUnavailableResponse, notFoundResponse } from './response.js';
 import { isPathSafe } from './utils.js';
+import { MiddlewarePipeline, type RequestHandler } from './middleware.js';
+import { createLoggingMiddleware } from './middleware/logging.js';
+import { createRateLimitMiddleware } from './middleware/rateLimit.js';
+import { createCompressionMiddleware } from './middleware/compression.js';
 
 const REQUEST_TIMEOUT_MS = 30000; // 30 seconds per-request timeout
 
@@ -29,11 +33,16 @@ export class Runtime {
   private readonly state: StateManager;
   private readonly telemetry: Telemetry;
   private readonly router: Router;
+  private readonly pipeline: MiddlewarePipeline;
 
   constructor() {
     this.state = new StateManager();
     this.telemetry = new Telemetry();
     this.router = new Router();
+    this.pipeline = new MiddlewarePipeline()
+      .use(createLoggingMiddleware())
+      .use(createRateLimitMiddleware())
+      .use(createCompressionMiddleware());
 
     // Register routes
     this.setupRoutes();
@@ -71,19 +80,26 @@ export class Runtime {
 
     let responseSize = 0;
     try {
-      // Enforce timeout with cancellable timer
-      const timeoutController = { cancelled: false };
+      let timeoutHandle: NodeJS.Timeout | undefined;
+      const timeout = new Promise<RuntimeResponse>((resolve) => {
+        timeoutHandle = setTimeout(() => {
+          resolve(errorResponse('Request timeout', 503, false, undefined, envelope.id));
+        }, REQUEST_TIMEOUT_MS);
+        timeoutHandle.unref?.();
+      });
+
       const response = await Promise.race([
         this.handleInternal(envelope),
-        this.timeoutHandler(REQUEST_TIMEOUT_MS, timeoutController, envelope.id),
+        timeout,
       ]);
-      
-      // Cancel timeout to prevent memory leak
-      timeoutController.cancelled = true;
+
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
 
       // Calculate response size for telemetry
-      responseSize = Buffer.isBuffer(response.body) 
-        ? response.body.length 
+      responseSize = Buffer.isBuffer(response.body)
+        ? response.body.length
         : Buffer.byteLength(response.body, 'utf8');
 
       return response;
@@ -121,8 +137,9 @@ export class Runtime {
     // Build context
     const ctx = createContext(envelope, classification, match.params);
 
-    // Dispatch to handler
-    return this.dispatch(match.handler, ctx);
+    // Dispatch through middleware pipeline and handler
+    const finalHandler: RequestHandler = (context) => this.dispatch(match.handler, context);
+    return this.pipeline.handle(ctx, finalHandler);
   }
 
   /**
@@ -148,30 +165,6 @@ export class Runtime {
       default:
         return notFoundResponse(ctx.pathInfo, ctx.expects === 'json', ctx.id);
     }
-  }
-
-  /**
-   * Timeout handler returns 503 after timeout (with cancellation support).
-   */
-  private async timeoutHandler(ms: number, controller: { cancelled: boolean }, requestId: string): Promise<RuntimeResponse> {
-    await new Promise<void>(resolve => {
-      const timer = setTimeout(() => {
-        if (!controller.cancelled) {
-          resolve();
-        }
-      }, ms);
-      // Check periodically for cancellation to clean up early
-      const checkInterval = setInterval(() => {
-        if (controller.cancelled) {
-          clearTimeout(timer);
-          clearInterval(checkInterval);
-          resolve();
-        }
-      }, 100);
-    });
-    return controller.cancelled 
-      ? errorResponse('Request completed', 200, false, undefined, requestId) // Never returned
-      : errorResponse('Request timeout', 503, false, undefined, requestId);
   }
 
   /**

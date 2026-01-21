@@ -20,6 +20,11 @@ export interface ShutdownOptions {
   readonly timeout?: number;
 }
 
+export interface ShutdownResult {
+  drained: boolean;
+  activeRequests: number;
+}
+
 /**
  * Performs graceful shutdown sequence with proper cleanup.
  *
@@ -40,7 +45,7 @@ export async function gracefulShutdown(
   state: StateManager,
   telemetry: Telemetry,
   options: ShutdownOptions
-): Promise<void> {
+): Promise<ShutdownResult> {
   const { signal, timeout = DRAIN_TIMEOUT_MS } = options;
 
   console.log(`[shutdown] Received ${signal}, starting graceful shutdown...`);
@@ -48,7 +53,8 @@ export async function gracefulShutdown(
   // Transition to DRAINING state (stops accepting new requests)
   if (!state.transition('DRAINING')) {
     console.log('[shutdown] Already draining or stopped');
-    return;
+    const snapshot = telemetry.getSnapshot();
+    return { drained: snapshot.requestsActive === 0, activeRequests: snapshot.requestsActive };
   }
 
   // Stop accepting new connections from clients
@@ -62,7 +68,7 @@ export async function gracefulShutdown(
 
   // Wait for active requests to complete or timeout
   const drainStart = Date.now();
-  await waitForDrain(telemetry, timeout, () => {
+  const drainResult = await waitForDrain(telemetry, timeout, () => {
     const elapsed = Date.now() - drainStart;
     const snapshot = telemetry.getSnapshot();
     console.log(
@@ -77,8 +83,7 @@ export async function gracefulShutdown(
   state.transition('STOPPING');
   console.log('[shutdown] Graceful shutdown complete');
 
-  // Exit process cleanly
-  process.exit(0);
+  return drainResult;
 }
 
 /**
@@ -95,7 +100,7 @@ async function waitForDrain(
   telemetry: Telemetry,
   timeoutMs: number,
   onTick: () => void
-): Promise<void> {
+): Promise<ShutdownResult> {
   const start = Date.now();
 
   while (Date.now() - start < timeoutMs) {
@@ -103,7 +108,7 @@ async function waitForDrain(
     const snapshot = telemetry.getSnapshot();
     if (snapshot.requestsActive === 0) {
       console.log('[shutdown] All active requests completed');
-      return;
+      return { drained: true, activeRequests: 0 };
     }
 
     // Wait a bit before checking again
@@ -111,9 +116,11 @@ async function waitForDrain(
     onTick();
   }
 
+  const remaining = telemetry.getSnapshot().requestsActive;
   console.warn(
-    `[shutdown] Drain timeout exceeded, forcing shutdown with ${telemetry.getSnapshot().requestsActive} active requests`
+    `[shutdown] Drain timeout exceeded, forcing shutdown with ${remaining} active requests`
   );
+  return { drained: false, activeRequests: remaining };
 }
 
 /**
@@ -147,33 +154,38 @@ function sleep(ms: number): Promise<void> {
 export function setupSignalHandlers(
   server: Server,
   state: StateManager,
-  telemetry: Telemetry
+  telemetry: Telemetry,
+  onComplete?: (result: ShutdownResult, exitCode: number) => void
 ): void {
   const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
+
+  const handle = async (signal: string, timeout?: number) => {
+    try {
+      const result = await gracefulShutdown(server, state, telemetry, { signal, timeout });
+      const exitCode = result.drained ? 0 : 1;
+      onComplete?.(result, exitCode);
+    } catch (err) {
+      console.error('[shutdown] Fatal error during shutdown:', err);
+      onComplete?.({ drained: false, activeRequests: -1 }, 1);
+    }
+  };
 
   // Normal shutdown signals
   signals.forEach(signal => {
     process.on(signal, () => {
-      gracefulShutdown(server, state, telemetry, { signal }).catch(err => {
-        console.error('[shutdown] Fatal error during shutdown:', err);
-        process.exit(1);
-      });
+      void handle(signal);
     });
   });
 
   // Uncaught exceptions
   process.on('uncaughtException', (err) => {
     console.error('[fatal] Uncaught exception:', err);
-    gracefulShutdown(server, state, telemetry, { signal: 'uncaughtException', timeout: 5000 }).catch(() => {
-      process.exit(1);
-    });
+    void handle('uncaughtException', 5000);
   });
 
   // Unhandled promise rejections
   process.on('unhandledRejection', (reason) => {
     console.error('[fatal] Unhandled rejection:', reason);
-    gracefulShutdown(server, state, telemetry, { signal: 'unhandledRejection', timeout: 5000 }).catch(() => {
-      process.exit(1);
-    });
+    void handle('unhandledRejection', 5000);
   });
 }

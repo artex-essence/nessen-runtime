@@ -34,7 +34,8 @@ async function gracefulShutdown(server, state, telemetry, options) {
     // Transition to DRAINING state (stops accepting new requests)
     if (!state.transition('DRAINING')) {
         console.log('[shutdown] Already draining or stopped');
-        return;
+        const snapshot = telemetry.getSnapshot();
+        return { drained: snapshot.requestsActive === 0, activeRequests: snapshot.requestsActive };
     }
     // Stop accepting new connections from clients
     server.close((err) => {
@@ -47,7 +48,7 @@ async function gracefulShutdown(server, state, telemetry, options) {
     });
     // Wait for active requests to complete or timeout
     const drainStart = Date.now();
-    await waitForDrain(telemetry, timeout, () => {
+    const drainResult = await waitForDrain(telemetry, timeout, () => {
         const elapsed = Date.now() - drainStart;
         const snapshot = telemetry.getSnapshot();
         console.log(`[shutdown] Draining... (${elapsed}ms, ${snapshot.requestsActive} active requests)`);
@@ -57,8 +58,7 @@ async function gracefulShutdown(server, state, telemetry, options) {
     // Transition to STOPPING state
     state.transition('STOPPING');
     console.log('[shutdown] Graceful shutdown complete');
-    // Exit process cleanly
-    process.exit(0);
+    return drainResult;
 }
 /**
  * Waits for active requests to complete or timeout.
@@ -77,13 +77,15 @@ async function waitForDrain(telemetry, timeoutMs, onTick) {
         const snapshot = telemetry.getSnapshot();
         if (snapshot.requestsActive === 0) {
             console.log('[shutdown] All active requests completed');
-            return;
+            return { drained: true, activeRequests: 0 };
         }
         // Wait a bit before checking again
         await sleep(DRAIN_CHECK_INTERVAL_MS);
         onTick();
     }
-    console.warn(`[shutdown] Drain timeout exceeded, forcing shutdown with ${telemetry.getSnapshot().requestsActive} active requests`);
+    const remaining = telemetry.getSnapshot().requestsActive;
+    console.warn(`[shutdown] Drain timeout exceeded, forcing shutdown with ${remaining} active requests`);
+    return { drained: false, activeRequests: remaining };
 }
 /**
  * Sleeps for the specified duration.
@@ -112,30 +114,34 @@ function sleep(ms) {
  * @param state - Runtime state manager
  * @param telemetry - Telemetry system to shutdown
  */
-function setupSignalHandlers(server, state, telemetry) {
+function setupSignalHandlers(server, state, telemetry, onComplete) {
     const signals = ['SIGTERM', 'SIGINT'];
+    const handle = async (signal, timeout) => {
+        try {
+            const result = await gracefulShutdown(server, state, telemetry, { signal, timeout });
+            const exitCode = result.drained ? 0 : 1;
+            onComplete?.(result, exitCode);
+        }
+        catch (err) {
+            console.error('[shutdown] Fatal error during shutdown:', err);
+            onComplete?.({ drained: false, activeRequests: -1 }, 1);
+        }
+    };
     // Normal shutdown signals
     signals.forEach(signal => {
         process.on(signal, () => {
-            gracefulShutdown(server, state, telemetry, { signal }).catch(err => {
-                console.error('[shutdown] Fatal error during shutdown:', err);
-                process.exit(1);
-            });
+            void handle(signal);
         });
     });
     // Uncaught exceptions
     process.on('uncaughtException', (err) => {
         console.error('[fatal] Uncaught exception:', err);
-        gracefulShutdown(server, state, telemetry, { signal: 'uncaughtException', timeout: 5000 }).catch(() => {
-            process.exit(1);
-        });
+        void handle('uncaughtException', 5000);
     });
     // Unhandled promise rejections
     process.on('unhandledRejection', (reason) => {
         console.error('[fatal] Unhandled rejection:', reason);
-        gracefulShutdown(server, state, telemetry, { signal: 'unhandledRejection', timeout: 5000 }).catch(() => {
-            process.exit(1);
-        });
+        void handle('unhandledRejection', 5000);
     });
 }
 //# sourceMappingURL=shutdown.js.map
